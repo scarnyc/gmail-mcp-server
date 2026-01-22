@@ -1,0 +1,49 @@
+[tool.poetry]
+name = "gmail-mcp-server"
+version = "0.1.0"
+description = "Gmail MCP Server for Claude Code integration"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "gmail_mcp"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+mcp = "^1.0.0"
+pydantic = "^2.0.0"
+google-api-python-client = "^2.0.0"
+google-auth = "^2.0.0"
+google-auth-oauthlib = "^1.0.0"
+cryptography = "^42.0.0"
+python-dotenv = "^1.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-cov = "^4.0.0"
+pytest-asyncio = "^0.23.0"
+ruff = "^0.4.0"
+mypy = "^1.0.0"
+
+[tool.poetry.scripts]
+gmail-mcp = "gmail_mcp.__main__:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=gmail_mcp --cov-report=term-missing"
