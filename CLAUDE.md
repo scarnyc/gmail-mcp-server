@@ -273,7 +273,7 @@ pytest tests/ -v --tb=short
 | Wave | Description | Status | Commit |
 |------|-------------|--------|--------|
 | **Wave 1** | Foundation Layer (errors, encryption, HITL, schemas) | ✅ Complete | `4a520fe` |
-| **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | - |
+| **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e` |
 | **Wave 3** | Tools (6 read, 5 write) | ⏳ Pending | - |
 | **Wave 4** | Server Integration (server.py, __main__.py) | ⏳ Pending | - |
 | **Wave 5** | Final Validation | ⏳ Pending | - |
