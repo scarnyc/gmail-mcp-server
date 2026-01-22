@@ -201,12 +201,13 @@ class OAuthManager:
             flow.fetch_token(code=code)
             credentials = flow.credentials
 
+            # Note: client_secret is NOT stored in token_data for security.
+            # It will be retrieved from environment variables at refresh time.
             token_data = {
                 "access_token": credentials.token,
                 "refresh_token": credentials.refresh_token,
                 "token_uri": credentials.token_uri,
                 "client_id": credentials.client_id,
-                "client_secret": credentials.client_secret,
                 "scopes": (
                     list(credentials.scopes) if credentials.scopes else GMAIL_SCOPES
                 ),
@@ -359,7 +360,8 @@ class OAuthManager:
                     if returned_state != state:
                         error = AuthenticationError(
                             "State mismatch - possible CSRF attack",
-                            details={"expected": state[:8], "received": returned_state},
+                            # Note: Don't leak state values in error details
+                            details={"hint": "Request may have been tampered with"},
                         )
                         handler_self.send_response(400)
                         handler_self.send_header("Content-type", "text/html")
@@ -550,6 +552,7 @@ class OAuthManager:
                 data = response.json()
 
                 # Success - user completed authentication
+                # Note: client_secret NOT stored - retrieved from env at refresh
                 if "access_token" in data:
                     logger.info("Device flow completed successfully")
                     return {
@@ -557,7 +560,6 @@ class OAuthManager:
                         "refresh_token": data.get("refresh_token"),
                         "token_uri": GOOGLE_TOKEN_URI,
                         "client_id": self._client_id,
-                        "client_secret": self._client_secret,
                         "scopes": GMAIL_SCOPES,
                     }
 

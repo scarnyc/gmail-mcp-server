@@ -181,10 +181,9 @@ def validate_label_name(name: str) -> str:
     if len(name) > 225:
         raise ValidationError("Label name too long (max 225 characters)")
 
-    # Gmail doesn't allow these characters in label names
-    invalid_chars = ["\\", "/"]
-    for char in invalid_chars:
-        if char in name and name != "/":  # Allow / for nested labels
-            raise ValidationError(f"Label name contains invalid character: {char}")
+    # Gmail doesn't allow backslashes in label names
+    # Note: Forward slashes are allowed for nested labels (e.g., "Parent/Child")
+    if "\\" in name:
+        raise ValidationError("Label name contains invalid character: \\")
 
     return name

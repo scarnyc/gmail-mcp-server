@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime
 from typing import Any
 
@@ -26,6 +27,7 @@ class GmailClient:
     def __init__(self) -> None:
         self._services: dict[str, Resource] = {}
         self._credentials: dict[str, Credentials] = {}
+        self._lock = threading.Lock()
 
     def get_service(self, user_id: str = "default") -> Resource:
         """Get authenticated Gmail API service for user.
@@ -39,49 +41,51 @@ class GmailClient:
         Raises:
             AuthenticationError: If user is not authenticated or token refresh fails.
         """
-        # Check cache
-        if user_id in self._services:
-            creds = self._credentials.get(user_id)
-            if creds and creds.valid:
-                return self._services[user_id]
-            # Token expired, try refresh
-            if creds and creds.expired and creds.refresh_token:
+        with self._lock:
+            # Check cache
+            if user_id in self._services:
+                creds = self._credentials.get(user_id)
+                if creds and creds.valid:
+                    return self._services[user_id]
+                # Token expired, try refresh
+                if creds and creds.expired and creds.refresh_token:
+                    try:
+                        return self._refresh_and_cache(user_id, creds)
+                    except Exception as e:
+                        logger.warning("Token refresh failed for %s: %s", user_id, e)
+                        self._invalidate_unlocked(user_id)
+
+            # Load from storage
+            token_data = token_storage.load(user_id)
+            if not token_data:
+                raise AuthenticationError(
+                    f"User {user_id} not authenticated. "
+                    "Please complete OAuth flow first."
+                )
+
+            # Build credentials
+            creds = self._build_credentials(token_data)
+
+            # Check if refresh needed
+            if creds.expired and creds.refresh_token:
                 try:
                     return self._refresh_and_cache(user_id, creds)
                 except Exception as e:
-                    logger.warning("Token refresh failed for %s: %s", user_id, e)
-                    self.invalidate(user_id)
+                    logger.error("Token refresh failed: %s", e)
+                    raise AuthenticationError(f"Token refresh failed: {e}") from e
 
-        # Load from storage
-        token_data = token_storage.load(user_id)
-        if not token_data:
-            raise AuthenticationError(
-                f"User {user_id} not authenticated. Please complete OAuth flow first."
-            )
+            if not creds.valid:
+                raise AuthenticationError(
+                    f"Invalid credentials for {user_id}. Please re-authenticate."
+                )
 
-        # Build credentials
-        creds = self._build_credentials(token_data)
+            # Build and cache service
+            service = build("gmail", "v1", credentials=creds)
+            self._services[user_id] = service
+            self._credentials[user_id] = creds
 
-        # Check if refresh needed
-        if creds.expired and creds.refresh_token:
-            try:
-                return self._refresh_and_cache(user_id, creds)
-            except Exception as e:
-                logger.error("Token refresh failed: %s", e)
-                raise AuthenticationError(f"Token refresh failed: {e}") from e
-
-        if not creds.valid:
-            raise AuthenticationError(
-                f"Invalid credentials for {user_id}. Please re-authenticate."
-            )
-
-        # Build and cache service
-        service = build("gmail", "v1", credentials=creds)
-        self._services[user_id] = service
-        self._credentials[user_id] = creds
-
-        logger.info("Created Gmail service for user %s", user_id)
-        return service
+            logger.info("Created Gmail service for user %s", user_id)
+            return service
 
     def _build_credentials(self, token_data: dict[str, Any]) -> Credentials:
         """Build Credentials object from token data."""
@@ -89,8 +93,12 @@ class GmailClient:
         if "expiry" in token_data:
             try:
                 expiry = datetime.fromisoformat(token_data["expiry"])
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as e:
+                logger.warning(
+                    "Failed to parse token expiry '%s': %s",
+                    token_data.get("expiry"),
+                    e,
+                )
 
         return Credentials(  # type: ignore[no-untyped-call]
             token=token_data.get("access_token"),
@@ -130,11 +138,16 @@ class GmailClient:
         logger.info("Refreshed token and rebuilt service for %s", user_id)
         return service
 
-    def invalidate(self, user_id: str) -> None:
-        """Clear cached service for user."""
+    def _invalidate_unlocked(self, user_id: str) -> None:
+        """Clear cached service for user (must hold lock)."""
         self._services.pop(user_id, None)
         self._credentials.pop(user_id, None)
         logger.debug("Invalidated cache for user %s", user_id)
+
+    def invalidate(self, user_id: str) -> None:
+        """Clear cached service for user."""
+        with self._lock:
+            self._invalidate_unlocked(user_id)
 
     def is_authenticated(self, user_id: str = "default") -> bool:
         """Check if user has valid stored credentials."""

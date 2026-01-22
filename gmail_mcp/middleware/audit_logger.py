@@ -48,7 +48,23 @@ class AuditLogger:
     ensuring they don't interfere with MCP STDIO communication.
     """
 
-    SENSITIVE_KEYS = {"body", "password", "token", "secret", "key", "credential"}
+    SENSITIVE_KEYS = {
+        "body",
+        "password",
+        "token",
+        "secret",
+        "key",
+        "credential",
+        "access_token",
+        "refresh_token",
+        "client_secret",
+        "client_id",
+        "authorization",
+        "api_key",
+        "auth",
+        "bearer",
+        "private_key",
+    }
 
     def __init__(self, enabled: bool = True):
         """Initialize audit logger.

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import stat
 from pathlib import Path
 
 from gmail_mcp.auth.tokens import decrypt_token, encrypt_token
@@ -101,10 +103,19 @@ class TokenStorage:
 
         try:
             encrypted = encrypt_token(token_data)
-            path.write_text(json.dumps(encrypted, indent=2))
+            content = json.dumps(encrypted, indent=2)
 
-            # Restrict permissions to owner read/write only (0600)
-            path.chmod(0o600)
+            # Write file with restricted permissions atomically to avoid
+            # race condition where file briefly has default permissions
+            fd = os.open(
+                path,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                stat.S_IRUSR | stat.S_IWUSR,  # 0600
+            )
+            try:
+                os.write(fd, content.encode("utf-8"))
+            finally:
+                os.close(fd)
 
             logger.info("Saved encrypted token for user %s", user_id)
 

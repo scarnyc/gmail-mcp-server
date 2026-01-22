@@ -179,25 +179,41 @@ def parse_headers(message: dict[str, Any]) -> dict[str, str]:
     return headers
 
 
+def _safe_base64_decode(data: str) -> str:
+    """Safely decode base64 data with error handling.
+
+    Args:
+        data: Base64 encoded string.
+
+    Returns:
+        Decoded string, or empty string if decoding fails.
+    """
+    try:
+        return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
+    except (ValueError, UnicodeDecodeError) as e:
+        logger.warning("Failed to decode base64 body data: %s", e)
+        return ""
+
+
 def decode_body(message: dict[str, Any]) -> str:
     """Decode message body from base64."""
     payload = message.get("payload", {})
 
     # Simple message
     if "body" in payload and payload["body"].get("data"):
-        return base64.urlsafe_b64decode(payload["body"]["data"]).decode()
+        return _safe_base64_decode(payload["body"]["data"])
 
     # Multipart - find text/plain or text/html
     parts = payload.get("parts", [])
     for part in parts:
         mime_type = part.get("mimeType", "")
         if mime_type == "text/plain" and part.get("body", {}).get("data"):
-            return base64.urlsafe_b64decode(part["body"]["data"]).decode()
+            return _safe_base64_decode(part["body"]["data"])
 
     for part in parts:
         mime_type = part.get("mimeType", "")
         if mime_type == "text/html" and part.get("body", {}).get("data"):
-            return base64.urlsafe_b64decode(part["body"]["data"]).decode()
+            return _safe_base64_decode(part["body"]["data"])
 
     # Nested multipart
     for part in parts:

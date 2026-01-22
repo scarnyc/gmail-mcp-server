@@ -148,6 +148,41 @@ class RateLimiter:
                 del self._buckets[user_id]
                 logger.debug("Reset rate limit bucket for %s", user_id)
 
+    def cleanup_stale(self, max_age_seconds: float = 3600) -> int:
+        """Remove stale buckets that haven't been used recently.
+
+        This prevents unbounded memory growth from inactive users.
+
+        Args:
+            max_age_seconds: Maximum age since last update to keep bucket.
+                Defaults to 1 hour.
+
+        Returns:
+            Number of buckets removed.
+        """
+        now = time.monotonic()
+        removed = 0
+
+        with self._lock:
+            stale_users = [
+                user_id
+                for user_id, bucket in self._buckets.items()
+                if now - bucket.last_update > max_age_seconds
+            ]
+
+            for user_id in stale_users:
+                del self._buckets[user_id]
+                removed += 1
+
+            if removed > 0:
+                logger.debug(
+                    "Cleaned up %d stale rate limit buckets (older than %ds)",
+                    removed,
+                    max_age_seconds,
+                )
+
+        return removed
+
 
 # Global singleton
 rate_limiter = RateLimiter()
