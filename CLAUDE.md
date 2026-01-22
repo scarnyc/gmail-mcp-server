@@ -268,6 +268,36 @@ pytest tests/ -v --tb=short
 **Wave progression:**
 - Wave 1 → GATE 1 → Wave 2 → GATE 2 → Wave 3 → GATE 3 → Wave 4 → GATE 4 → Wave 5
 
+## Implementation Progress
+
+| Wave | Description | Status | Commit |
+|------|-------------|--------|--------|
+| **Wave 1** | Foundation Layer (errors, encryption, HITL, schemas) | ✅ Complete | `4a520fe` |
+| **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | - |
+| **Wave 3** | Tools (6 read, 5 write) | ⏳ Pending | - |
+| **Wave 4** | Server Integration (server.py, __main__.py) | ⏳ Pending | - |
+| **Wave 5** | Final Validation | ⏳ Pending | - |
+
+### Wave 1 Details (Complete)
+- `utils/errors.py` - 7 custom exception classes
+- `utils/encryption.py` - AES-256-GCM utilities
+- `hitl/models.py` - Pydantic approval models
+- `hitl/manager.py` - Thread-safe approval manager with action verification
+- `schemas/tools.py` - 11 tool parameter models with EmailStr validation
+- Tests: 53 passing (75% coverage)
+
+### Wave 2 Details (Complete)
+- `auth/tokens.py` - Token encryption/decryption (encrypt_token, decrypt_token)
+- `auth/storage.py` - File-based encrypted token storage (~/.gmail-mcp/tokens/)
+- `auth/oauth.py` - Google OAuth (local server + device flow)
+- `gmail/messages.py` - Message operations (list, get, send, modify, delete)
+- `gmail/threads.py` - Thread operations (list, get, modify, delete)
+- `gmail/labels.py` - Label management (CRUD operations)
+- `gmail/client.py` - Authenticated client factory with token refresh
+- `middleware/rate_limiter.py` - Token bucket rate limiting
+- `middleware/audit_logger.py` - Stderr JSON audit logging
+- `middleware/validator.py` - Input validation (email, message_id, thread_id, search query)
+
 ## Implementation Phases
 
 ### Phase 1: Foundation Layer
