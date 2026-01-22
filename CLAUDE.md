@@ -235,3 +235,284 @@ Available for ticket management. Start sessions with `/backlog` to pull from Kan
 - Per-user rate limiting on API calls
 - Audit logging for all tool invocations
 - Input validation via Pydantic before processing
+
+## Quality Gate Checklist (Phase-Gated Development)
+
+Before proceeding to the next implementation wave, **ALL** checks must pass:
+
+```bash
+# 1. Lint check
+ruff check gmail_mcp/
+
+# 2. Format check
+ruff format --check gmail_mcp/
+
+# 3. Type check
+mypy gmail_mcp/
+
+# 4. Run tests for completed modules
+pytest tests/ -v --tb=short
+
+# 5. Code review (via /code-review skill)
+```
+
+**Gate criteria:**
+- [ ] Zero lint errors
+- [ ] Zero format issues
+- [ ] Zero type errors (mypy strict)
+- [ ] All tests pass
+- [ ] Code review approved (no critical issues)
+
+**Post-gate action:** After code review passes, commit and push changes before proceeding to next wave.
+
+**Wave progression:**
+- Wave 1 → GATE 1 → Wave 2 → GATE 2 → Wave 3 → GATE 3 → Wave 4 → GATE 4 → Wave 5
+
+## Implementation Phases
+
+### Phase 1: Foundation Layer
+
+Files to create:
+
+1. gmail_mcp/utils/errors.py
+- GmailMCPError (base), AuthenticationError, TokenError, ApprovalError, RateLimitError, GmailAPIError, ValidationError
+2. gmail_mcp/utils/encryption.py
+- generate_key() - Generate 256-bit key
+- encrypt_data(plaintext, key) - AES-256-GCM with unique IV
+- decrypt_data(iv, ciphertext, key)
+- key_from_hex(hex_string)
+3. gmail_mcp/hitl/models.py
+- ApprovalStatus enum (PENDING, APPROVED, REJECTED, EXPIRED)
+- ApprovalRequest model (id, action, preview, expires_at, user_id)
+- ApprovalResponse model (status, approval_id, expires_at, preview, message)
+4. gmail_mcp/hitl/manager.py
+- ApprovalManager class with store(), validate(), consume(), cleanup_expired()
+- Global approval_manager singleton
+
+Tests: tests/test_utils.py, tests/test_hitl.py
+
+---
+### Phase 2: Authentication Layer
+
+Files to create:
+
+5. gmail_mcp/schemas/tools.py
+- Read params: TriageParams, SearchParams, SummarizeThreadParams, DraftReplyParams, ChatInboxParams, ApplyLabelsParams
+- Write params (with approval_id): SendEmailParams, ArchiveEmailParams, DeleteEmailParams, UnsubscribeParams, CreateLabelParams, OrganizeLabelsParams
+6. gmail_mcp/auth/tokens.py
+- encrypt_token(token_dict, key) - Returns {iv, ciphertext} as hex
+- decrypt_token(encrypted, key) - Returns original dict
+7. gmail_mcp/auth/storage.py
+- TokenStorage class with save(user_id, token), load(user_id), delete(user_id)
+- Storage path: ~/.gmail-mcp/tokens/{user_id}.token.enc
+8. gmail_mcp/auth/oauth.py
+- OAuthManager class:
+    - create_auth_url(state) - Generate consent URL
+    - run_local_server(port) - Desktop flow (opens browser)
+    - start_device_flow() - Returns {verification_uri, user_code, device_code, interval}
+    - poll_device_flow(device_code) - Poll until user completes auth
+    - exchange_code(code) - Exchange auth code for tokens
+    - refresh_credentials(token_data) - Refresh expired tokens
+
+Tests: tests/test_oauth.py, tests/test_tokens.py
+
+---
+### Phase 3: Gmail Client Layer
+
+Files to create:
+
+9. gmail_mcp/gmail/client.py
+- GmailClient class:
+    - get_service(user_id) - Returns authenticated Gmail API Resource
+    - invalidate(user_id) - Clear cached service
+    - Auto-refreshes tokens when expired
+10. gmail_mcp/gmail/messages.py
+- list_messages(service, query, label_ids, max_results)
+- get_message(service, message_id, format)
+- send_message(service, to, subject, body, cc, bcc, thread_id)
+- modify_message(service, message_id, add_labels, remove_labels)
+- trash_message(service, message_id)
+- delete_message(service, message_id)
+- parse_headers(message) - Extract From, To, Subject, Date
+- decode_body(message) - Base64 decode body
+11. gmail_mcp/gmail/threads.py
+- list_threads(service, query, label_ids, max_results)
+- get_thread(service, thread_id, format)
+- modify_thread(service, thread_id, add_labels, remove_labels)
+- trash_thread(service, thread_id)
+12. gmail_mcp/gmail/labels.py
+- list_labels(service)
+- get_label(service, label_id)
+- create_label(service, name, visibility)
+- update_label(service, label_id, ...)
+- delete_label(service, label_id)
+
+Tests: tests/test_gmail_client.py
+
+---
+### Phase 4: Middleware & Tools
+
+Files to create:
+
+13. gmail_mcp/middleware/rate_limiter.py
+- RateLimiter class (token bucket algorithm)
+- check(user_id), consume(user_id), remaining(user_id)
+- Global rate_limiter singleton
+14. gmail_mcp/middleware/audit_logger.py
+- AuditEntry model
+- AuditLogger class with log(), log_tool_call()
+- Writes to stderr (STDIO-safe)
+15. gmail_mcp/middleware/validator.py
+- validate_email(email), validate_message_id(id), validate_thread_id(id), sanitize_search_query(query)
+
+#### Read Tools (6 files):
+
+16. gmail_mcp/tools/read/triage.py - gmail_triage_inbox
+17. gmail_mcp/tools/read/summarize.py - gmail_summarize_thread
+18. gmail_mcp/tools/read/draft.py - gmail_draft_reply
+19. gmail_mcp/tools/read/search.py - gmail_search
+20. gmail_mcp/tools/read/chat.py - gmail_chat_inbox
+21. gmail_mcp/tools/read/labels.py - gmail_apply_labels
+
+#### Write Tools (5 files) - All use HITL two-step flow:
+
+22. gmail_mcp/tools/write/send.py - gmail_send_email
+23. gmail_mcp/tools/write/archive.py - gmail_archive_email
+24. gmail_mcp/tools/write/delete.py - gmail_delete_email
+25. gmail_mcp/tools/write/unsubscribe.py - gmail_unsubscribe
+26. gmail_mcp/tools/write/labels.py - gmail_create_label, gmail_organize_labels
+
+Tests: tests/test_tools/test_read.py, tests/test_tools/test_write.py
+
+---
+### Phase 5: Server Integration
+
+Files to modify/create:
+
+27. gmail_mcp/server.py (new)
+- FastMCP server initialization
+- Lifespan context for shared resources (gmail_client, oauth_manager)
+- Tool registration with annotations
+- Rate limiting and audit logging middleware
+28. gmail_mcp/__main__.py (update existing stub)
+- Load .env configuration
+- Transport selection: stdio (default) or http (Replit)
+- HTTP: bind to 0.0.0.0:$PORT for Replit
+29. pyproject.toml (update)
+- Add missing pytest-mock dev dependency
+
+Tests: tests/test_server.py
+
+---
+### HITL Two-Step Flow Pattern
+
+async def gmail_send_email(params: SendEmailParams) -> dict:
+    # Step 1: No approval_id -> return preview
+    if not params.approval_id:
+        request = ApprovalRequest(
+            action="send_email",
+            preview={"to": params.to, "subject": params.subject, "body": params.body[:200]},
+        )
+        approval_manager.store(request)
+        return {
+            "status": "pending_approval",
+            "approval_id": request.id,
+            "expires_at": request.expires_at.isoformat(),
+            "preview": request.preview,
+            "message": "ACTION NOT TAKEN. Please review and confirm.",
+        }
+
+    # Step 2: Valid approval_id -> execute
+    if not approval_manager.consume(params.approval_id):
+        raise ApprovalError("Invalid or expired approval")
+    # Execute Gmail API call...
+
+---
+### Tool Annotations Reference
+
+| Tool                   | readOnly | destructive | idempotent |
+|------------------------|----------|-------------|------------|
+| gmail_triage_inbox     | Y        |             | Y          |
+| gmail_summarize_thread | Y        |             | Y          |
+| gmail_draft_reply      | Y        |             | Y          |
+| gmail_search           | Y        |             | Y          |
+| gmail_chat_inbox       | Y        |             | Y          |
+| gmail_apply_labels     |          |             | Y          |
+| gmail_send_email       |          | Y           |            |
+| gmail_archive_email    |          | Y           | Y          |
+| gmail_delete_email     |          | Y           |            |
+| gmail_unsubscribe      |          | Y           |            |
+| gmail_create_label     |          |             |            |
+| gmail_organize_labels  |          | Y           |            |
+
+---
+### MCP Client Configuration (How Claude Connects)
+
+The server reads TRANSPORT env var to start in the right mode. The client (Claude) needs matching configuration:
+
+#### Local Development (stdio transport)
+
+Add to .mcp.json in project root or ~/.claude/.mcp.json globally:
+
+{
+"mcpServers": {
+    "gmail": {
+    "command": "gmail-mcp",
+    "args": [],
+    "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
+        "TRANSPORT": "stdio"
+    }
+    }
+}
+}
+
+Or run via Poetry:
+{
+"mcpServers": {
+    "gmail": {
+    "command": "poetry",
+    "args": ["run", "python", "-m", "gmail_mcp"],
+    "cwd": "/path/to/gmail-mcp-server",
+    "env": {
+        "TRANSPORT": "stdio"
+    }
+    }
+}
+}
+
+#### Replit Production (HTTP transport)
+
+For HTTP/SSE transport, Claude clients connect via URL. The Replit deployment exposes an HTTP endpoint:
+
+https://your-replit-app.replit.app/mcp
+
+Configure in Claude's MCP settings (varies by client):
+- Claude Desktop: Not yet supported for HTTP (stdio only)
+- Claude Code: HTTP MCP servers configured via URL in settings
+- Custom clients: Use MCP SDK's HTTP client
+
+Server-side (Replit):
+```
+# __main__.py detects TRANSPORT=http and starts HTTP server
+mcp.run(transport="http", host="0.0.0.0", port=int(os.getenv("PORT", "3000")))
+```
+
+---
+#### Replit Deployment Notes
+
+1. Environment variables (set in Replit Secrets):
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
+TOKEN_ENCRYPTION_KEY=<64-char hex>
+TRANSPORT=http
+PORT=3000
+2. OAuth on Replit: Use device flow - no localhost redirect needed
+- User calls auth tool, gets verification URL + code
+- User visits URL on any device, enters code
+- MCP server polls Google until auth completes
+3. Token persistence: Store in Replit's persistent storage path
+
+**Plan name for reference**: ~/.claude/plans/woolly-baking-cray.md
