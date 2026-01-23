@@ -149,7 +149,10 @@ class ApprovalManager:
             return True
 
     def consume(
-        self, approval_id: str, expected_action: str | None = None
+        self,
+        approval_id: str,
+        expected_action: str | None = None,
+        params_hash: str | None = None,
     ) -> ApprovalRequest | None:
         """Validate and remove an approval request (one-time use).
 
@@ -161,13 +164,17 @@ class ApprovalManager:
             approval_id: The approval ID to consume.
             expected_action: Optional action type to verify against the stored request.
                            If provided, raises ApprovalError on mismatch.
+            params_hash: Optional SHA-256 hash of parameters for tampering detection.
+                        If provided and the stored request has a params_hash,
+                        they must match.
 
         Returns:
             The ApprovalRequest if valid and consumed, None if invalid/expired.
 
         Raises:
             ApprovalError: If the approval_id is invalid, expired, already consumed,
-                          or action type doesn't match expected_action.
+                          action type doesn't match expected_action, or params_hash
+                          doesn't match stored hash.
 
         Example:
             >>> request = manager.consume(approval_id, expected_action="send_email")
@@ -236,6 +243,21 @@ class ApprovalManager:
                         "actual_action": request.action,
                     },
                 )
+
+            # Verify params hash if provided
+            if params_hash and request.params_hash:
+                if params_hash != request.params_hash:
+                    logger.warning(
+                        "Consume failed: approval_id=%s params hash mismatch",
+                        approval_id,
+                    )
+                    raise ApprovalError(
+                        "Approval parameters mismatch",
+                        details={
+                            "approval_id": approval_id,
+                            "reason": "params_hash_mismatch",
+                        },
+                    )
 
             # Mark as approved and remove from storage
             request.status = ApprovalStatus.APPROVED

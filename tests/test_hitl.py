@@ -526,6 +526,120 @@ class TestApprovalManagerThreadSafety:
         assert all(r is True for r in results)
 
 
+class TestParamsHashVerification:
+    """Tests for params_hash parameter tampering detection."""
+
+    @pytest.fixture
+    def manager(self) -> ApprovalManager:
+        """Create a fresh ApprovalManager for each test."""
+        return ApprovalManager(timeout_ms=60000)
+
+    def test_consume_with_matching_params_hash(self, manager: ApprovalManager) -> None:
+        """Test consume succeeds when params_hash matches."""
+        params_hash = "abc123hashvalue"
+        request = ApprovalRequest(
+            action="send_email",
+            preview={"to": "test@example.com"},
+            expires_at=datetime.utcnow(),
+            params_hash=params_hash,
+        )
+        approval_id = manager.store(request)
+
+        # Should succeed with matching hash
+        consumed = manager.consume(
+            approval_id,
+            expected_action="send_email",
+            params_hash=params_hash,
+        )
+
+        assert consumed is not None
+        assert consumed.id == approval_id
+
+    def test_consume_raises_for_mismatched_params_hash(
+        self, manager: ApprovalManager
+    ) -> None:
+        """Test consume raises ApprovalError when params_hash doesn't match."""
+        request = ApprovalRequest(
+            action="send_email",
+            preview={"to": "test@example.com"},
+            expires_at=datetime.utcnow(),
+            params_hash="original_hash_value",
+        )
+        approval_id = manager.store(request)
+
+        # Should raise with mismatched hash (tampering detected)
+        with pytest.raises(ApprovalError) as exc_info:
+            manager.consume(
+                approval_id,
+                expected_action="send_email",
+                params_hash="tampered_hash_value",
+            )
+
+        assert "parameters mismatch" in str(exc_info.value).lower()
+        assert exc_info.value.details["reason"] == "params_hash_mismatch"
+
+    def test_consume_without_params_hash_on_request_succeeds(
+        self, manager: ApprovalManager
+    ) -> None:
+        """Test consume succeeds when request has no params_hash (backward compatible)."""
+        request = ApprovalRequest(
+            action="send_email",
+            preview={"to": "test@example.com"},
+            expires_at=datetime.utcnow(),
+            # No params_hash
+        )
+        approval_id = manager.store(request)
+
+        # Should succeed even when caller provides hash (request has none)
+        consumed = manager.consume(
+            approval_id,
+            expected_action="send_email",
+            params_hash="any_hash_value",
+        )
+
+        assert consumed is not None
+
+    def test_consume_without_caller_params_hash_succeeds(
+        self, manager: ApprovalManager
+    ) -> None:
+        """Test consume succeeds when caller provides no params_hash."""
+        request = ApprovalRequest(
+            action="send_email",
+            preview={"to": "test@example.com"},
+            expires_at=datetime.utcnow(),
+            params_hash="stored_hash_value",
+        )
+        approval_id = manager.store(request)
+
+        # Should succeed when caller doesn't provide hash
+        consumed = manager.consume(
+            approval_id,
+            expected_action="send_email",
+            # No params_hash provided
+        )
+
+        assert consumed is not None
+
+    def test_params_hash_field_on_approval_request(self) -> None:
+        """Test params_hash field on ApprovalRequest model."""
+        # With hash
+        request_with_hash = ApprovalRequest(
+            action="send_email",
+            preview={},
+            expires_at=datetime.utcnow(),
+            params_hash="test_hash_123",
+        )
+        assert request_with_hash.params_hash == "test_hash_123"
+
+        # Without hash (default None)
+        request_without_hash = ApprovalRequest(
+            action="send_email",
+            preview={},
+            expires_at=datetime.utcnow(),
+        )
+        assert request_without_hash.params_hash is None
+
+
 class TestGlobalApprovalManager:
     """Tests for the global approval_manager singleton."""
 

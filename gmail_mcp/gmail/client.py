@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import datetime
 from typing import Any
@@ -28,6 +29,19 @@ class GmailClient:
         self._services: dict[str, Resource] = {}
         self._credentials: dict[str, Credentials] = {}
         self._lock = threading.Lock()
+        self._refresh_locks: dict[str, threading.Lock] = {}
+        self._refresh_lock_mutex = threading.Lock()
+
+    def _get_or_create_refresh_lock(self, user_id: str) -> threading.Lock:
+        """Get or create a per-user refresh lock.
+
+        This prevents concurrent refresh attempts for the same user while
+        allowing different users to refresh their tokens concurrently.
+        """
+        with self._refresh_lock_mutex:
+            if user_id not in self._refresh_locks:
+                self._refresh_locks[user_id] = threading.Lock()
+            return self._refresh_locks[user_id]
 
     def get_service(self, user_id: str = "default") -> Resource:
         """Get authenticated Gmail API service for user.
@@ -41,21 +55,43 @@ class GmailClient:
         Raises:
             AuthenticationError: If user is not authenticated or token refresh fails.
         """
+        # First check: fast path with global lock
         with self._lock:
-            # Check cache
+            # Check cache for valid credentials
             if user_id in self._services:
                 creds = self._credentials.get(user_id)
                 if creds and creds.valid:
                     return self._services[user_id]
-                # Token expired, try refresh
-                if creds and creds.expired and creds.refresh_token:
-                    try:
-                        return self._refresh_and_cache(user_id, creds)
-                    except Exception as e:
-                        logger.warning("Token refresh failed for %s: %s", user_id, e)
+
+        # Need to load or refresh - get per-user refresh lock
+        refresh_lock = self._get_or_create_refresh_lock(user_id)
+
+        with refresh_lock:
+            # Double-check: another thread may have refreshed while we waited
+            with self._lock:
+                if user_id in self._services:
+                    creds = self._credentials.get(user_id)
+                    if creds and creds.valid:
+                        return self._services[user_id]
+                    # Token expired, need refresh
+                    if creds and creds.expired and creds.refresh_token:
+                        creds_to_refresh = creds
+                    else:
+                        creds_to_refresh = None
+                else:
+                    creds_to_refresh = None
+
+            # Try refresh outside global lock (but inside per-user lock)
+            if creds_to_refresh:
+                try:
+                    service = self._do_refresh(user_id, creds_to_refresh)
+                    return service
+                except Exception as e:
+                    logger.warning("Token refresh failed for %s: %s", user_id, e)
+                    with self._lock:
                         self._invalidate_unlocked(user_id)
 
-            # Load from storage
+            # Load from storage (inside per-user lock to prevent duplicate loads)
             token_data = token_storage.load(user_id)
             if not token_data:
                 raise AuthenticationError(
@@ -69,7 +105,8 @@ class GmailClient:
             # Check if refresh needed
             if creds.expired and creds.refresh_token:
                 try:
-                    return self._refresh_and_cache(user_id, creds)
+                    service = self._do_refresh(user_id, creds)
+                    return service
                 except Exception as e:
                     logger.error("Token refresh failed: %s", e)
                     raise AuthenticationError(f"Token refresh failed: {e}") from e
@@ -81,10 +118,11 @@ class GmailClient:
 
             # Build and cache service
             service = build("gmail", "v1", credentials=creds)
-            self._services[user_id] = service
-            self._credentials[user_id] = creds
+            with self._lock:
+                self._services[user_id] = service
+                self._credentials[user_id] = creds
 
-            logger.info("Created Gmail service for user %s", user_id)
+            logger.debug("Created Gmail service for user %s", user_id)
             return service
 
     def _build_credentials(self, token_data: dict[str, Any]) -> Credentials:
@@ -100,29 +138,38 @@ class GmailClient:
                     e,
                 )
 
+        # Fall back to env var for client_secret since it's not stored for security
+        client_secret = token_data.get("client_secret")
+        if not client_secret:
+            client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+
         return Credentials(  # type: ignore[no-untyped-call]
             token=token_data.get("access_token"),
             refresh_token=token_data.get("refresh_token"),
             token_uri=token_data.get("token_uri", GOOGLE_TOKEN_URI),
             client_id=token_data.get("client_id"),
-            client_secret=token_data.get("client_secret"),
+            client_secret=client_secret,
             scopes=token_data.get("scopes", GMAIL_SCOPES),
             expiry=expiry,
         )
 
-    def _refresh_and_cache(self, user_id: str, creds: Credentials) -> Resource:
-        """Refresh credentials and rebuild service."""
+    def _do_refresh(self, user_id: str, creds: Credentials) -> Resource:
+        """Refresh credentials and rebuild service.
+
+        Must be called while holding the per-user refresh lock.
+        Acquires global lock only to update cache.
+        """
         from google.auth.transport.requests import Request
 
         creds.refresh(Request())
 
         # Update stored token
+        # NOTE: client_secret is NOT stored for security - retrieved from env at refresh
         token_data = {
             "access_token": creds.token,
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
             "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
             "scopes": list(creds.scopes) if creds.scopes else GMAIL_SCOPES,
         }
         if creds.expiry:
@@ -130,12 +177,13 @@ class GmailClient:
 
         token_storage.save(user_id, token_data)
 
-        # Rebuild service
+        # Rebuild service and update cache
         service = build("gmail", "v1", credentials=creds)
-        self._services[user_id] = service
-        self._credentials[user_id] = creds
+        with self._lock:
+            self._services[user_id] = service
+            self._credentials[user_id] = creds
 
-        logger.info("Refreshed token and rebuilt service for %s", user_id)
+        logger.debug("Refreshed token and rebuilt service for %s", user_id)
         return service
 
     def _invalidate_unlocked(self, user_id: str) -> None:

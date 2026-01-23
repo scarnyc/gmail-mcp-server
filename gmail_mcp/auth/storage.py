@@ -26,6 +26,21 @@ from gmail_mcp.utils.errors import TokenError
 logger = logging.getLogger(__name__)
 
 
+def _get_storage_base_dir() -> Path:
+    """Get token storage base directory from env or default.
+
+    Checks TOKEN_STORAGE_PATH environment variable first,
+    falling back to ~/.gmail-mcp/tokens/ if not set.
+
+    Returns:
+        Path to the token storage directory.
+    """
+    custom_path = os.getenv("TOKEN_STORAGE_PATH")
+    if custom_path:
+        return Path(custom_path).expanduser().resolve()
+    return Path.home() / ".gmail-mcp" / "tokens"
+
+
 class TokenStorage:
     """File-based encrypted token storage.
 
@@ -52,7 +67,7 @@ class TokenStorage:
                 defaults to ~/.gmail-mcp/tokens/
         """
         if base_dir is None:
-            base_dir = Path.home() / ".gmail-mcp" / "tokens"
+            base_dir = _get_storage_base_dir()
 
         self._base_dir = base_dir
         self._base_dir.mkdir(parents=True, exist_ok=True)
@@ -84,7 +99,16 @@ class TokenStorage:
                 details={"original_user_id": user_id[:50]},  # Truncate for safety
             )
 
-        return self._base_dir / f"{safe_id}.token.enc"
+        path = self._base_dir / f"{safe_id}.token.enc"
+
+        # Validate path stays within base_dir to prevent traversal attacks
+        if not path.resolve().is_relative_to(self._base_dir.resolve()):
+            raise TokenError(
+                "Invalid user_id - path traversal detected",
+                details={"user_id": user_id[:50]},
+            )
+
+        return path
 
     def save(self, user_id: str, token_data: dict[str, object]) -> None:
         """Save encrypted token for a user.
@@ -117,7 +141,7 @@ class TokenStorage:
             finally:
                 os.close(fd)
 
-            logger.info("Saved encrypted token for user %s", user_id)
+            logger.debug("Saved encrypted token for user %s", user_id)
 
         except TokenError:
             raise
