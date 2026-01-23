@@ -223,6 +223,10 @@ Enabled via `.claude/settings.json`:
 | **ralph-loop** | Autonomous multi-step task execution |
 | **pyright-lsp** | Python language server for type checking |
 | **firebase** | Firebase SDK integration tools |
+| **code-review** | Code review a pull request |
+| **security-guidance** | Security best practices and vulnerability guidance |
+| **code-simplifier** | Simplifies code for clarity and maintainability (agent) |
+| **feature-dev** | Guided feature development with architecture focus |
 
 ## JIRA Integration
 
@@ -273,8 +277,8 @@ pytest tests/ -v --tb=short
 | Wave | Description | Status | Commit |
 |------|-------------|--------|--------|
 | **Wave 1** | Foundation Layer (errors, encryption, HITL, schemas) | ✅ Complete | `4a520fe` |
-| **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e` |
-| **Wave 3** | Tools (6 read, 5 write) | ⏳ Pending | - |
+| **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e`, `7d3b0f4` (security fixes) |
+| **Wave 3** | Tools (6 read, 5 write) | 🔄 In Progress | - |
 | **Wave 4** | Server Integration (server.py, __main__.py) | ⏳ Pending | - |
 | **Wave 5** | Final Validation | ⏳ Pending | - |
 
