@@ -279,7 +279,7 @@ pytest tests/ -v --tb=short
 | **Wave 1** | Foundation Layer (errors, encryption, HITL, schemas) | ✅ Complete | `4a520fe` |
 | **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e`, `7d3b0f4` (security fixes) |
 | **Wave 3** | Tools (6 read, 5 write) | ✅ Complete | `9ce8d5c` |
-| **Wave 4** | Server Integration (server.py, __main__.py) | ⏳ Pending | - |
+| **Wave 4** | Server Integration (server.py, __main__.py) | ✅ Complete | `c49b46b` |
 | **Wave 5** | Final Validation | ⏳ Pending | - |
 
 ### Wave 1 Details (Complete)
@@ -301,6 +301,12 @@ pytest tests/ -v --tb=short
 - `middleware/rate_limiter.py` - Token bucket rate limiting
 - `middleware/audit_logger.py` - Stderr JSON audit logging
 - `middleware/validator.py` - Input validation (email, message_id, thread_id, search query)
+
+### Wave 4 Details (Complete)
+- `server.py` - FastMCP server with 12 tool registrations and lifespan context
+- `__main__.py` - Entry point with env validation and transport selection (stdio/SSE/streamable-http)
+- `tests/test_server.py` - 24 tests across 6 test classes
+- Added uvicorn as runtime dependency for SSE transport
 
 ## Implementation Phases
 
