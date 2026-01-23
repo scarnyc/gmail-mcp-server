@@ -152,9 +152,9 @@ async def gmail_send_email(params: SendEmailParams) -> dict[str, Any]:
             error=str(e),
             error_code=e.__class__.__name__.upper(),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in send_email")
         return build_error_response(
-            error=f"Failed to send email: {e}",
+            error="An internal error occurred while sending email",
             error_code="INTERNAL_ERROR",
         )

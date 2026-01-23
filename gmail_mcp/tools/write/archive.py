@@ -155,9 +155,9 @@ async def gmail_archive_email(params: ArchiveEmailParams) -> dict[str, Any]:
             error=str(e),
             error_code=e.__class__.__name__.upper(),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in archive_email")
         return build_error_response(
-            error=f"Failed to archive emails: {e}",
+            error="An internal error occurred while archiving emails",
             error_code="INTERNAL_ERROR",
         )

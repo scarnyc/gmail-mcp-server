@@ -150,23 +150,60 @@ def encrypt_token(token_data: bytes, key: bytes) -> dict:
     return {"iv": iv, "ciphertext": ciphertext}
 ```
 
-## Environment Variables
+## Secret Management
 
-Required in `.env`:
-```
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=http://localhost:3000/oauth/callback
-TOKEN_ENCRYPTION_KEY=     # 64-char hex (256-bit)
+Following the standard MCP secret management pattern (consistent with JIRA MCP):
+
+**Setup:**
+
+1. Generate API credentials:
+   - Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   - Create OAuth 2.0 Client ID (Desktop or Web app)
+   - Download credentials
+
+2. Set environment variables:
+```bash
+export GOOGLE_CLIENT_ID="your-client-id"
+export GOOGLE_CLIENT_SECRET="your-client-secret"
+export TOKEN_ENCRYPTION_KEY="$(openssl rand -hex 32)"
 ```
 
-Optional:
+3. Add to `.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "gmail-mcp",
+      "args": [],
+      "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
+        "TRANSPORT": "stdio"
+      }
+    }
+  }
+}
 ```
-PORT=3000
-TRANSPORT=stdio           # 'stdio' or 'http'
-RATE_LIMIT_MAX=100        # requests per minute per user
-HITL_TIMEOUT_MS=300000    # approval expiry (5 min default)
+
+4. Restart Claude Code, verify with `/mcp`
+
+**CLI Commands:**
+```bash
+gmail-mcp serve    # Start MCP server (alias for python -m gmail_mcp)
 ```
+
+**Environment Variables:**
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `GOOGLE_CLIENT_ID` | Yes | - | OAuth 2.0 Client ID |
+| `GOOGLE_CLIENT_SECRET` | Yes | - | OAuth 2.0 Client Secret |
+| `TOKEN_ENCRYPTION_KEY` | Yes | - | 64-char hex (256-bit AES key) |
+| `TRANSPORT` | No | `stdio` | Transport: stdio, http, streamable-http |
+| `PORT` | No | `3000` | HTTP server port |
+| `RATE_LIMIT_MAX` | No | `100` | Requests per minute per user |
+| `HITL_TIMEOUT_MS` | No | `300000` | Approval expiry (5 min) |
 
 ## OAuth Scopes
 
@@ -280,7 +317,7 @@ pytest tests/ -v --tb=short
 | **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e`, `7d3b0f4` (security fixes) |
 | **Wave 3** | Tools (6 read, 5 write) | ✅ Complete | `9ce8d5c` |
 | **Wave 4** | Server Integration (server.py, __main__.py) | ✅ Complete | `c49b46b` |
-| **Wave 5** | Final Validation | ⏳ Pending | - |
+| **Wave 5** | Final Validation & Deployment Prep | ✅ Complete | (pending) |
 
 ### Wave 1 Details (Complete)
 - `utils/errors.py` - 7 custom exception classes
@@ -555,4 +592,9 @@ PORT=3000
 - MCP server polls Google until auth completes
 3. Token persistence: Store in Replit's persistent storage path
 
-**Plan name for reference**: ~/.claude/plans/woolly-baking-cray.md
+## Plan Files
+
+| Plan | Description |
+|------|-------------|
+| `~/.claude/plans/woolly-baking-cray.md` | Original implementation plan (architecture, phases, wave strategy) |
+| `~/.claude/plans/enchanted-shimmying-squirrel.md` | Wave 5 final validation plan |

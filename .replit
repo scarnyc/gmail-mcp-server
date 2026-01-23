@@ -1,0 +1,11 @@
+run = "poetry run python -m gmail_mcp"
+entrypoint = "gmail_mcp/__main__.py"
+
+[env]
+TRANSPORT = "http"
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "poetry run python -m gmail_mcp"]

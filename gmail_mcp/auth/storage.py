@@ -84,7 +84,16 @@ class TokenStorage:
                 details={"original_user_id": user_id[:50]},  # Truncate for safety
             )
 
-        return self._base_dir / f"{safe_id}.token.enc"
+        path = self._base_dir / f"{safe_id}.token.enc"
+
+        # Validate path stays within base_dir to prevent traversal attacks
+        if not path.resolve().is_relative_to(self._base_dir.resolve()):
+            raise TokenError(
+                "Invalid user_id - path traversal detected",
+                details={"user_id": user_id[:50]},
+            )
+
+        return path
 
     def save(self, user_id: str, token_data: dict[str, object]) -> None:
         """Save encrypted token for a user.

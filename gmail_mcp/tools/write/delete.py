@@ -180,9 +180,9 @@ async def gmail_delete_email(params: DeleteEmailParams) -> dict[str, Any]:
             error=str(e),
             error_code=e.__class__.__name__.upper(),
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Unexpected error in delete_email")
         return build_error_response(
-            error=f"Failed to delete emails: {e}",
+            error="An internal error occurred while deleting emails",
             error_code="INTERNAL_ERROR",
         )

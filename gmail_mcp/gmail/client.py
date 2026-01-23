@@ -117,12 +117,12 @@ class GmailClient:
         creds.refresh(Request())
 
         # Update stored token
+        # NOTE: client_secret is NOT stored for security - retrieved from env at refresh
         token_data = {
             "access_token": creds.token,
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
             "client_id": creds.client_id,
-            "client_secret": creds.client_secret,
             "scopes": list(creds.scopes) if creds.scopes else GMAIL_SCOPES,
         }
         if creds.expiry:
