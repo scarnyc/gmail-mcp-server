@@ -36,6 +36,10 @@ gmail_mcp/
 ├── server.py             # MCP server setup, tool registration
 ├── tools/
 │   ├── __init__.py
+│   ├── auth/             # OAuth authentication tools
+│   │   ├── login.py      # gmail_login (device flow)
+│   │   ├── logout.py     # gmail_logout
+│   │   └── status.py     # gmail_get_auth_status
 │   ├── read/             # Read-only tools (no HITL required)
 │   │   ├── triage.py     # gmail_triage_inbox
 │   │   ├── summarize.py  # gmail_summarize_thread
@@ -236,6 +240,9 @@ Dev:
 
 | Tool | readOnly | destructive | idempotent |
 |------|----------|-------------|------------|
+| gmail_login | | | |
+| gmail_logout | | Y | Y |
+| gmail_get_auth_status | Y | | Y |
 | gmail_triage_inbox | Y | | Y |
 | gmail_summarize_thread | Y | | Y |
 | gmail_draft_reply | Y | | Y |
@@ -327,7 +334,8 @@ pytest tests/ -v --tb=short
 | **Wave 2** | Auth + Gmail Client (tokens, storage, oauth, gmail ops, middleware) | ✅ Complete | `9cfbe3e`, `7d3b0f4` (security fixes) |
 | **Wave 3** | Tools (6 read, 5 write) | ✅ Complete | `9ce8d5c` |
 | **Wave 4** | Server Integration (server.py, __main__.py) | ✅ Complete | `c49b46b` |
-| **Wave 5** | Final Validation & Deployment Prep | ✅ Complete | (pending) |
+| **Wave 5** | Final Validation & Deployment Prep | ✅ Complete | `35c66d1` |
+| **Wave 6** | OAuth Authentication Tools (3 tools: login, logout, status) | ✅ Complete | (pending) |
 
 ### Wave 1 Details (Complete)
 - `utils/errors.py` - 7 custom exception classes
@@ -354,6 +362,14 @@ pytest tests/ -v --tb=short
 - `__main__.py` - Entry point with env validation and transport selection (stdio/SSE/streamable-http)
 - `tests/test_server.py` - 24 tests across 6 test classes
 - Added uvicorn as runtime dependency for SSE transport
+
+### Wave 6 Details (Complete)
+- `tools/auth/__init__.py` - Auth tools package exports
+- `tools/auth/login.py` - `gmail_login` (Google device flow authentication)
+- `tools/auth/logout.py` - `gmail_logout` (clear stored credentials)
+- `tools/auth/status.py` - `gmail_get_auth_status` (check authentication state)
+- `server.py` - Updated with 15 tool registrations (3 auth + 6 read + 6 write)
+- Tests: `tests/test_tools/test_auth.py` - 9 test cases
 
 ## Implementation Phases
 
@@ -519,6 +535,9 @@ async def gmail_send_email(params: SendEmailParams) -> dict:
 
 | Tool                   | readOnly | destructive | idempotent |
 |------------------------|----------|-------------|------------|
+| gmail_login            |          |             |            |
+| gmail_logout           |          | Y           | Y          |
+| gmail_get_auth_status  | Y        |             | Y          |
 | gmail_triage_inbox     | Y        |             | Y          |
 | gmail_summarize_thread | Y        |             | Y          |
 | gmail_draft_reply      | Y        |             | Y          |

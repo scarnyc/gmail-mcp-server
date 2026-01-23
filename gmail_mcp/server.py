@@ -1,8 +1,9 @@
 """FastMCP server for Gmail MCP.
 
-This module provides the FastMCP server instance with all 12 tool registrations.
-Tools are organized into two categories:
+This module provides the FastMCP server instance with all 15 tool registrations.
+Tools are organized into three categories:
 
+- Auth Tools (3): OAuth authentication operations
 - Read Tools (6): Read-only operations that do not require HITL approval
 - Write Tools (6): Destructive operations that require human-in-the-loop approval
 
@@ -48,6 +49,9 @@ from gmail_mcp.tools import (
     gmail_create_label,
     gmail_delete_email,
     gmail_draft_reply,
+    gmail_get_auth_status,
+    gmail_login,
+    gmail_logout,
     gmail_organize_labels,
     gmail_search,
     gmail_send_email,
@@ -117,6 +121,87 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
     yield {}
 
     logger.info("Gmail MCP server shutting down...")
+
+
+# =============================================================================
+# Auth Tool Wrappers
+# =============================================================================
+
+
+def _register_auth_tools(mcp: FastMCP) -> None:
+    """Register all authentication tools with the FastMCP server.
+
+    Auth tools handle OAuth authentication and don't require HITL approval.
+
+    Args:
+        mcp: The FastMCP server instance.
+    """
+
+    @mcp.tool(
+        name="gmail_login",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+        ),
+    )
+    async def gmail_login_tool(
+        device_code: str | None = None,
+    ) -> dict[str, Any]:
+        """Sign in to Gmail using Google device flow.
+
+        Two-step flow:
+        1. First call (no device_code): Returns verification URL and user code
+        2. Second call (with device_code): Polls for completion, stores tokens
+
+        Args:
+            device_code: Device code from step 1 (required for step 2).
+
+        Returns:
+            Step 1: {verification_uri, user_code, device_code, message}
+            Step 2: {status, email, message}
+        """
+        return await gmail_login(device_code=device_code)
+
+    @mcp.tool(
+        name="gmail_logout",
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=True,
+        ),
+    )
+    async def gmail_logout_tool() -> dict[str, Any]:
+        """Sign out of Gmail by clearing stored credentials.
+
+        Removes the stored OAuth token and invalidates any cached Gmail API
+        service. The user will need to re-authenticate using gmail_login
+        to use other Gmail tools.
+
+        Returns:
+            Success response with logout confirmation.
+        """
+        return await gmail_logout()
+
+    @mcp.tool(
+        name="gmail_get_auth_status",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+        ),
+    )
+    async def gmail_get_auth_status_tool() -> dict[str, Any]:
+        """Check if the user is authenticated with Gmail.
+
+        Returns the authentication status and user email if authenticated.
+
+        Returns:
+            Success response with authentication status:
+            - authenticated: True/False
+            - email: User's email if authenticated, None otherwise
+        """
+        return await gmail_get_auth_status()
 
 
 # =============================================================================
@@ -575,7 +660,7 @@ def create_server() -> FastMCP:
 
     Creates a FastMCP server with:
     - Lifespan context manager for startup/shutdown cleanup
-    - All 12 Gmail tools registered with appropriate annotations
+    - All 15 Gmail tools registered with appropriate annotations
 
     Returns:
         Configured FastMCP server instance.
@@ -585,10 +670,11 @@ def create_server() -> FastMCP:
         lifespan=server_lifespan,
     )
 
+    _register_auth_tools(server)
     _register_read_tools(server)
     _register_write_tools(server)
 
-    logger.info("Gmail MCP server created with 12 tools registered")
+    logger.info("Gmail MCP server created with 15 tools registered")
     return server
 
 
