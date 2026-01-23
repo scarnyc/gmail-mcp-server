@@ -14,9 +14,12 @@ def configure_logging() -> None:
 
     Sends all logs to stderr so they don't interfere with MCP's
     STDIO transport which uses stdout for JSON-RPC messages.
+
+    Respects LOG_LEVEL env var (DEBUG, INFO, WARNING, ERROR, CRITICAL).
     """
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, log_level, logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         stream=sys.stderr,
     )
@@ -80,27 +83,30 @@ def main() -> None:
     # Select transport based on environment
     transport = os.getenv("TRANSPORT", "stdio").lower()
 
-    if transport in ("sse", "http"):
-        # SSE transport for remote deployments (Replit, etc.)
-        # Use uvicorn for custom host/port configuration
-        host = os.getenv("HOST", "0.0.0.0")
-        port = int(os.getenv("PORT", "3000"))
-        logger.info("Starting Gmail MCP Server with SSE transport on %s:%d", host, port)
-        try:
-            import uvicorn
+    match transport:
+        case "sse" | "http":
+            # SSE transport for remote deployments (Replit, etc.)
+            # Use uvicorn for custom host/port configuration
+            host = os.getenv("HOST", "0.0.0.0")
+            port = int(os.getenv("PORT", "3000"))
+            logger.info(
+                "Starting Gmail MCP Server with SSE transport on %s:%d", host, port
+            )
+            try:
+                import uvicorn
 
-            uvicorn.run(mcp.sse_app(), host=host, port=port, log_level="info")
-        except ImportError:
-            logger.error("uvicorn required for SSE transport: pip install uvicorn")
-            sys.exit(1)
-    elif transport == "streamable-http":
-        # Streamable HTTP for stateless deployments
-        logger.info("Starting Gmail MCP Server with streamable-http transport")
-        mcp.run(transport="streamable-http")
-    else:
-        # STDIO transport for local development (default)
-        logger.info("Starting Gmail MCP Server with STDIO transport")
-        mcp.run(transport="stdio")
+                uvicorn.run(mcp.sse_app(), host=host, port=port, log_level="info")
+            except ImportError:
+                logger.error("uvicorn required for SSE transport: pip install uvicorn")
+                sys.exit(1)
+        case "streamable-http":
+            # Streamable HTTP for stateless deployments
+            logger.info("Starting Gmail MCP Server with streamable-http transport")
+            mcp.run(transport="streamable-http")
+        case _:
+            # STDIO transport for local development (default)
+            logger.info("Starting Gmail MCP Server with STDIO transport")
+            mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

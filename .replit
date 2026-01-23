@@ -2,6 +2,8 @@ run = "poetry run python -m gmail_mcp"
 entrypoint = "gmail_mcp/__main__.py"
 
 [env]
+# TRANSPORT="http" maps to SSE transport for Replit deployments
+# Valid values: stdio (default), http/sse, streamable-http
 TRANSPORT = "http"
 
 [nix]

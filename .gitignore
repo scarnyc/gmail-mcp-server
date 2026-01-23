@@ -52,3 +52,5 @@ Thumbs.db
 # Project specific
 token.json
 credentials.json
+.mcp.json
+.envrc

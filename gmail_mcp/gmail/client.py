@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import datetime
 from typing import Any
@@ -100,12 +101,17 @@ class GmailClient:
                     e,
                 )
 
+        # Fall back to env var for client_secret since it's not stored for security
+        client_secret = token_data.get("client_secret") or os.getenv(
+            "GOOGLE_CLIENT_SECRET"
+        )
+
         return Credentials(  # type: ignore[no-untyped-call]
             token=token_data.get("access_token"),
             refresh_token=token_data.get("refresh_token"),
             token_uri=token_data.get("token_uri", GOOGLE_TOKEN_URI),
             client_id=token_data.get("client_id"),
-            client_secret=token_data.get("client_secret"),
+            client_secret=client_secret,
             scopes=token_data.get("scopes", GMAIL_SCOPES),
             expiry=expiry,
         )
