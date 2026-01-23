@@ -277,6 +277,16 @@ Available for ticket management. Start sessions with `/backlog` to pull from Kan
 - Audit logging for all tool invocations
 - Input validation via Pydantic before processing
 
+## Known Limitations
+
+### Single-User Mode
+The current implementation operates in single-user mode (`user_id="default"`). All
+Gmail operations use the same authenticated account. Multi-user support (extracting
+user identity from MCP context) is planned for a future release.
+
+For multi-account use cases, run separate MCP server instances with different
+token storage paths via `TOKEN_STORAGE_PATH` environment variable.
+
 ## Quality Gate Checklist (Phase-Gated Development)
 
 Before proceeding to the next implementation wave, **ALL** checks must pass:
@@ -598,3 +608,4 @@ PORT=3000
 |------|-------------|
 | `~/.claude/plans/woolly-baking-cray.md` | Original implementation plan (architecture, phases, wave strategy) |
 | `~/.claude/plans/enchanted-shimmying-squirrel.md` | Wave 5 final validation plan |
+| `~/.claude/plans/dazzling-sparking-hollerith.md`  | Wave 6 Oauth hook            |

@@ -163,6 +163,12 @@ async def gmail_chat_inbox(
     This tool converts natural language questions into Gmail search queries
     and returns relevant messages.
 
+    Supported question patterns:
+        - "Show me unread emails from today"
+        - "Find emails about the project meeting"
+        - "What emails have attachments?"
+        - "Emails from john@example.com this week"
+
     Args:
         params: ChatInboxParams containing the question.
 

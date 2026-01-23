@@ -17,9 +17,10 @@ def configure_logging() -> None:
 
     Respects LOG_LEVEL env var (DEBUG, INFO, WARNING, ERROR, CRITICAL).
     """
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = logging.getLevelNamesMapping().get(log_level_str, logging.INFO)
     logging.basicConfig(
-        level=getattr(logging, log_level, logging.INFO),
+        level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         stream=sys.stderr,
     )

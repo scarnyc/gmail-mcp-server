@@ -12,6 +12,7 @@ from gmail_mcp.schemas.tools import DeleteEmailParams
 from gmail_mcp.tools.base import (
     build_error_response,
     build_success_response,
+    compute_params_hash,
     create_approval_request,
     execute_tool,
     validate_and_consume_approval,
@@ -110,7 +111,49 @@ async def gmail_delete_email(params: DeleteEmailParams) -> dict[str, Any]:
             )
 
         # Step 2: Validate approval and execute delete
-        validate_and_consume_approval(params.approval_id, ACTION_NAME)
+        # For delete, the critical parameters are message_ids - we need to verify
+        # they haven't been tampered with. We hash the same preview structure.
+        service = gmail_client.get_service()
+        verification_previews: list[dict[str, str]] = []
+
+        for msg_id in validated_ids[:MAX_PREVIEW_MESSAGES]:
+            try:
+                message = get_message(service, msg_id, format="metadata")
+                headers = parse_headers(message)
+
+                verification_previews.append(
+                    {
+                        "id": msg_id,
+                        "from": headers.get("From", "Unknown"),
+                        "subject": headers.get("Subject", "(no subject)"),
+                        "snippet": message.get("snippet", "")[:100],
+                    }
+                )
+            except GmailMCPError:
+                verification_previews.append(
+                    {
+                        "id": msg_id,
+                        "from": "Unknown",
+                        "subject": "(failed to fetch)",
+                        "snippet": "",
+                    }
+                )
+
+        verification_preview: dict[str, Any] = {
+            "message_count": len(validated_ids),
+            "messages": verification_previews,
+            "warning": DELETE_WARNING,
+        }
+        if len(validated_ids) > MAX_PREVIEW_MESSAGES:
+            verification_preview["additional_messages"] = (
+                len(validated_ids) - MAX_PREVIEW_MESSAGES
+            )
+
+        validate_and_consume_approval(
+            params.approval_id,
+            ACTION_NAME,
+            params_hash=compute_params_hash(verification_preview),
+        )
         logger.info(
             "Approval validated for delete_email, deleting %d messages",
             len(validated_ids),

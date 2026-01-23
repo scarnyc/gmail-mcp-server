@@ -26,6 +26,21 @@ from gmail_mcp.utils.errors import TokenError
 logger = logging.getLogger(__name__)
 
 
+def _get_storage_base_dir() -> Path:
+    """Get token storage base directory from env or default.
+
+    Checks TOKEN_STORAGE_PATH environment variable first,
+    falling back to ~/.gmail-mcp/tokens/ if not set.
+
+    Returns:
+        Path to the token storage directory.
+    """
+    custom_path = os.getenv("TOKEN_STORAGE_PATH")
+    if custom_path:
+        return Path(custom_path).expanduser().resolve()
+    return Path.home() / ".gmail-mcp" / "tokens"
+
+
 class TokenStorage:
     """File-based encrypted token storage.
 
@@ -52,7 +67,7 @@ class TokenStorage:
                 defaults to ~/.gmail-mcp/tokens/
         """
         if base_dir is None:
-            base_dir = Path.home() / ".gmail-mcp" / "tokens"
+            base_dir = _get_storage_base_dir()
 
         self._base_dir = base_dir
         self._base_dir.mkdir(parents=True, exist_ok=True)
@@ -126,7 +141,7 @@ class TokenStorage:
             finally:
                 os.close(fd)
 
-            logger.info("Saved encrypted token for user %s", user_id)
+            logger.debug("Saved encrypted token for user %s", user_id)
 
         except TokenError:
             raise

@@ -22,6 +22,7 @@ from gmail_mcp.schemas.tools import CreateLabelParams, OrganizeLabelsParams
 from gmail_mcp.tools.base import (
     build_error_response,
     build_success_response,
+    compute_params_hash,
     create_approval_request,
     execute_tool,
     validate_and_consume_approval,
@@ -92,9 +93,18 @@ async def gmail_create_label(params: CreateLabelParams) -> dict[str, Any]:
             )
 
         # Step 2: Validate approval and create label
+        # Rebuild the preview to verify parameters haven't been tampered with
+        verification_preview = {
+            "name": validated_name,
+            "label_list_visibility": params.label_list_visibility,
+            "message_list_visibility": params.message_list_visibility,
+        }
+
         try:
             validate_and_consume_approval(
-                params.approval_id, expected_action="create_label"
+                params.approval_id,
+                expected_action="create_label",
+                params_hash=compute_params_hash(verification_preview),
             )
         except ApprovalError as e:
             return build_error_response(
@@ -294,6 +304,12 @@ async def gmail_organize_labels(params: OrganizeLabelsParams) -> dict[str, Any]:
     - update_visibility: {"action": "update_visibility", "label_id": "...",
         "visibility": "labelShow|labelHide|labelShowIfUnread"}
 
+    Example operations:
+        - Rename: {"action": "rename", "label_id": "Label_123", "new_name": "NewName"}
+        - Delete: {"action": "delete", "label_id": "Label_123"}
+        - Update visibility: {"action": "update_visibility", "label_id": "Label_123",
+            "visibility": "labelShow"}
+
     Args:
         params: OrganizeLabelsParams with operations list and optional approval_id.
 
@@ -362,9 +378,45 @@ async def gmail_organize_labels(params: OrganizeLabelsParams) -> dict[str, Any]:
             )
 
         # Step 2: Validate approval and execute operations
+        # Rebuild the preview to verify parameters haven't been tampered with
+        verification_operation_previews = []
+        for op in operations:
+            action = op["action"]
+            label_id = op["label_id"]
+
+            if action == "rename":
+                desc = f"Rename label '{label_id}' to '{op['new_name']}'"
+            elif action == "delete":
+                desc = f"Delete label '{label_id}'"
+            elif action == "update_visibility":
+                vis = op["visibility"]
+                desc = f"Update visibility of label '{label_id}' to '{vis}'"
+            else:
+                desc = f"{action} on label '{label_id}'"
+
+            verification_operation_previews.append(
+                {
+                    "action": action,
+                    "label_id": label_id,
+                    "description": desc,
+                    **{k: v for k, v in op.items() if k not in ("action", "label_id")},
+                }
+            )
+
+        verification_preview = {
+            "operation_count": len(operations),
+            "operations": verification_operation_previews,
+            "warning": (
+                "These operations will modify your Gmail labels. "
+                "Delete operations cannot be undone."
+            ),
+        }
+
         try:
             validate_and_consume_approval(
-                params.approval_id, expected_action="organize_labels"
+                params.approval_id,
+                expected_action="organize_labels",
+                params_hash=compute_params_hash(verification_preview),
             )
         except ApprovalError as e:
             return build_error_response(

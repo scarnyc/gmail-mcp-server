@@ -17,6 +17,7 @@ from gmail_mcp.schemas.tools import UnsubscribeParams
 from gmail_mcp.tools.base import (
     build_error_response,
     build_success_response,
+    compute_params_hash,
     create_approval_request,
     execute_tool,
     validate_and_consume_approval,
@@ -172,9 +173,29 @@ async def gmail_unsubscribe(params: UnsubscribeParams) -> dict[str, Any]:
             )
 
         # Step 2: Validate approval and return unsubscribe info
+        # Rebuild the preview to verify parameters haven't been tampered with
+        verification_preview = {
+            "message_id": validated_message_id,
+            "from": parsed_headers.get("From", "Unknown"),
+            "subject": parsed_headers.get("Subject", "No Subject"),
+            "unsubscribe_link": unsubscribe_info["link"],
+            "is_mailto": unsubscribe_info["is_mailto"],
+            "warning": (
+                "This will return the unsubscribe link. "
+                "You will need to follow the link to complete unsubscription."
+                + (
+                    " For mailto links, an email must be sent to unsubscribe."
+                    if unsubscribe_info["is_mailto"]
+                    else ""
+                )
+            ),
+        }
+
         try:
             validate_and_consume_approval(
-                params.approval_id, expected_action="unsubscribe"
+                params.approval_id,
+                expected_action="unsubscribe",
+                params_hash=compute_params_hash(verification_preview),
             )
         except ApprovalError as e:
             return build_error_response(

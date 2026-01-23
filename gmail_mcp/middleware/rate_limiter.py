@@ -1,4 +1,15 @@
-"""Rate limiting middleware using token bucket algorithm."""
+"""Rate limiting middleware using token bucket algorithm.
+
+Rate limiting configuration:
+- Default: 100 requests/minute (configurable via RATE_LIMIT_MAX)
+- Gmail API allows ~250 quota units/user/second, but:
+  - Most operations cost 5-100 quota units each
+  - Bursts can trigger temporary blocks
+  - Conservative limit prevents accidental quota exhaustion
+  - Protects against runaway loops in automation
+
+To adjust: set RATE_LIMIT_MAX environment variable (requests per minute).
+"""
 
 from __future__ import annotations
 

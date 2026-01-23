@@ -2,6 +2,13 @@ run = "poetry run python -m gmail_mcp"
 entrypoint = "gmail_mcp/__main__.py"
 
 [env]
+# REQUIRED SECRETS (set in Replit Secrets tab, NOT here):
+# - GOOGLE_CLIENT_ID: OAuth 2.0 Client ID from Google Cloud Console
+# - GOOGLE_CLIENT_SECRET: OAuth 2.0 Client Secret
+# - TOKEN_ENCRYPTION_KEY: 64-char hex key (generate: openssl rand -hex 32)
+#
+# See: https://docs.replit.com/programming-ide/workspace-features/secrets
+#
 # TRANSPORT="http" maps to SSE transport for Replit deployments
 # Valid values: stdio (default), http/sse, streamable-http
 TRANSPORT = "http"

@@ -141,7 +141,7 @@ class TestHITLHelpers:
         )
         assert result == valid_approval_request
         mock_approval_manager.consume.assert_called_once_with(
-            "test-id", expected_action="send_email"
+            "test-id", expected_action="send_email", params_hash=None
         )
 
     def test_validate_and_consume_approval_failure(self, mock_approval_manager):

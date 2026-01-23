@@ -84,6 +84,10 @@ class ApprovalRequest(BaseModel):
         default=None,
         description="Optional identifier of the user who initiated the request",
     )
+    params_hash: str | None = Field(
+        default=None,
+        description="SHA-256 hash of critical parameters for verification",
+    )
 
     def is_expired(self) -> bool:
         """Check if the approval request has expired.

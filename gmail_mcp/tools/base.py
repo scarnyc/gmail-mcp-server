@@ -8,6 +8,8 @@ This module provides shared utilities used by all Gmail MCP tools including:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -23,6 +25,27 @@ from gmail_mcp.utils.errors import GmailMCPError
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+# =============================================================================
+# Parameter Hash Computation
+# =============================================================================
+
+
+def compute_params_hash(params: dict[str, Any]) -> str:
+    """Compute SHA-256 hash of parameters for verification.
+
+    This is used to detect parameter tampering between the approval request
+    (step 1) and execution (step 2) in the HITL flow.
+
+    Args:
+        params: Dictionary of parameters to hash.
+
+    Returns:
+        Hex-encoded SHA-256 hash.
+    """
+    canonical = json.dumps(params, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 # =============================================================================
@@ -184,12 +207,16 @@ def create_approval_request(
     Returns:
         ApprovalResponse as dict with pending_approval status.
     """
+    # Compute hash of preview parameters for tampering detection
+    params_hash = compute_params_hash(preview)
+
     # Create request with placeholder expiration (manager will set actual expiry)
     request = ApprovalRequest(
         action=action,
         preview=preview,
         expires_at=datetime.now(UTC) + timedelta(minutes=5),
         user_id=user_id,
+        params_hash=params_hash,
     )
     # Store in manager (this sets the proper expiration based on HITL_TIMEOUT_MS)
     approval_manager.store(request)
@@ -201,6 +228,7 @@ def create_approval_request(
 def validate_and_consume_approval(
     approval_id: str,
     expected_action: str,
+    params_hash: str | None = None,
 ) -> ApprovalRequest:
     """Validate and consume an approval, raising ApprovalError on failure.
 
@@ -210,15 +238,22 @@ def validate_and_consume_approval(
     Args:
         approval_id: The approval ID from Step 1.
         expected_action: The expected action type for verification.
+        params_hash: Optional SHA-256 hash of parameters for tampering detection.
+                    If provided, must match the hash stored in the approval request.
 
     Returns:
         The consumed ApprovalRequest.
 
     Raises:
-        ApprovalError: If approval is invalid, expired, or action mismatch.
+        ApprovalError: If approval is invalid, expired, action mismatch,
+                      or params_hash mismatch.
     """
     # approval_manager.consume() raises ApprovalError on failure
     # The None return is technically unreachable but kept for type safety
-    result = approval_manager.consume(approval_id, expected_action=expected_action)
+    result = approval_manager.consume(
+        approval_id,
+        expected_action=expected_action,
+        params_hash=params_hash,
+    )
     assert result is not None  # consume() always raises or returns valid request
     return result

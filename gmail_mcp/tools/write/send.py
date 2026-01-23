@@ -16,6 +16,7 @@ from gmail_mcp.schemas.tools import SendEmailParams
 from gmail_mcp.tools.base import (
     build_error_response,
     build_success_response,
+    compute_params_hash,
     create_approval_request,
     execute_tool,
     validate_and_consume_approval,
@@ -99,7 +100,25 @@ async def gmail_send_email(params: SendEmailParams) -> dict[str, Any]:
             )
 
         # Step 2: Validate approval and execute send
-        validate_and_consume_approval(params.approval_id, ACTION_NAME)
+        # Rebuild the preview to verify parameters haven't been tampered with
+        verification_preview: dict[str, Any] = {
+            "to": validated_to,
+            "subject": params.subject,
+            "body_preview": params.body[:BODY_PREVIEW_MAX_LENGTH]
+            + ("..." if len(params.body) > BODY_PREVIEW_MAX_LENGTH else ""),
+        }
+        if validated_cc:
+            verification_preview["cc"] = validated_cc
+        if validated_bcc:
+            verification_preview["bcc"] = validated_bcc
+        if validated_thread_id:
+            verification_preview["reply_to_thread_id"] = validated_thread_id
+
+        validate_and_consume_approval(
+            params.approval_id,
+            ACTION_NAME,
+            params_hash=compute_params_hash(verification_preview),
+        )
         logger.info("Approval validated for send_email, proceeding to send")
 
         # Prepare audit params (exclude sensitive body content)
