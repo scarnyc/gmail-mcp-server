@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,35 +10,11 @@ from gmail_mcp.utils.errors import AuthenticationError
 
 
 class TestGmailLogin:
-    """Tests for gmail_login tool."""
+    """Tests for gmail_login tool (local server OAuth flow)."""
 
     @pytest.mark.asyncio
-    async def test_login_step1_returns_device_info(self):
-        """Test first call returns device flow info."""
-        mock_device_info = {
-            "verification_uri": "https://www.google.com/device",
-            "user_code": "ABC-DEF",
-            "device_code": "device_code_123",
-            "expires_in": 1800,
-        }
-
-        with patch("gmail_mcp.tools.auth.login.oauth_manager") as mock_oauth:
-            mock_oauth.is_configured = True
-            mock_oauth.start_device_flow.return_value = mock_device_info
-
-            from gmail_mcp.tools.auth.login import gmail_login
-
-            result = await gmail_login(device_code=None)
-
-            assert result["status"] == "awaiting_user_action"
-            assert result["verification_uri"] == "https://www.google.com/device"
-            assert result["user_code"] == "ABC-DEF"
-            assert result["device_code"] == "device_code_123"
-            mock_oauth.start_device_flow.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_login_step2_polls_and_stores_token(self):
-        """Test second call polls and stores tokens."""
+    async def test_login_success_stores_token(self):
+        """Test successful login stores tokens and returns email."""
         mock_token_data = {
             "access_token": "ya29.test_token",
             "refresh_token": "refresh_test",
@@ -54,22 +29,23 @@ class TestGmailLogin:
             patch("gmail_mcp.tools.auth.login.build") as mock_build,
         ):
             mock_oauth.is_configured = True
-            mock_oauth.poll_device_flow.return_value = mock_token_data
+            mock_oauth.run_local_server.return_value = mock_token_data
             mock_oauth.get_credentials.return_value = MagicMock()
 
             mock_service = MagicMock()
-            mock_service.users.return_value.getProfile.return_value.execute.return_value = (
-                mock_profile
-            )
+            mock_users = mock_service.users.return_value
+            mock_users.getProfile.return_value.execute.return_value = mock_profile
             mock_build.return_value = mock_service
 
             from gmail_mcp.tools.auth.login import gmail_login
 
-            result = await gmail_login(device_code="device_code_123")
+            result = await gmail_login()
 
             assert result["status"] == "success"
             assert result["data"]["email"] == "user@gmail.com"
-            mock_oauth.poll_device_flow.assert_called_once_with("device_code_123")
+            mock_oauth.run_local_server.assert_called_once_with(
+                port=3000, timeout=120
+            )
             mock_storage.save.assert_called_once_with("default", mock_token_data)
             mock_client.invalidate.assert_called_once_with("default")
 
@@ -89,16 +65,33 @@ class TestGmailLogin:
 
     @pytest.mark.asyncio
     async def test_login_handles_auth_error(self):
-        """Test handles AuthenticationError during polling."""
+        """Test handles AuthenticationError from OAuth flow."""
         with patch("gmail_mcp.tools.auth.login.oauth_manager") as mock_oauth:
             mock_oauth.is_configured = True
-            mock_oauth.poll_device_flow.side_effect = AuthenticationError(
+            mock_oauth.run_local_server.side_effect = AuthenticationError(
                 "User denied access"
             )
 
             from gmail_mcp.tools.auth.login import gmail_login
 
-            result = await gmail_login(device_code="device_code_123")
+            result = await gmail_login()
+
+            assert result["status"] == "error"
+            assert result["error_code"] == "AuthenticationError"
+            assert "User denied access" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_login_handles_timeout(self):
+        """Test handles timeout waiting for OAuth callback."""
+        with patch("gmail_mcp.tools.auth.login.oauth_manager") as mock_oauth:
+            mock_oauth.is_configured = True
+            mock_oauth.run_local_server.side_effect = AuthenticationError(
+                "OAuth flow timed out"
+            )
+
+            from gmail_mcp.tools.auth.login import gmail_login
+
+            result = await gmail_login()
 
             assert result["status"] == "error"
             assert result["error_code"] == "AuthenticationError"
@@ -155,9 +148,8 @@ class TestGmailGetAuthStatus:
         with patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client:
             mock_client.is_authenticated.return_value = True
             mock_service = MagicMock()
-            mock_service.users.return_value.getProfile.return_value.execute.return_value = (
-                mock_profile
-            )
+            mock_users = mock_service.users.return_value
+            mock_users.getProfile.return_value.execute.return_value = mock_profile
             mock_client.get_service.return_value = mock_service
 
             from gmail_mcp.tools.auth.status import gmail_get_auth_status

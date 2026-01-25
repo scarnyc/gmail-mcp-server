@@ -1,17 +1,18 @@
-"""Gmail login tool - Two-step device flow authentication.
+"""Gmail login tool - Local server OAuth authentication.
 
-This tool implements Google's device authorization flow, which is ideal for
-MCP servers where browser access cannot be guaranteed.
+This tool implements Google's OAuth 2.0 local server flow, which opens a browser
+for user consent and receives the callback on localhost.
 
 Flow:
-1. User calls gmail_login() without device_code
-   → Returns verification URL + user code
-   → User visits URL and enters code manually
+1. User calls gmail_login()
+2. Browser opens to Google consent page
+3. User approves access
+4. Callback received on localhost:3000
+5. Tokens stored encrypted
+6. Returns success with user email
 
-2. User calls gmail_login(device_code="...") with the device_code
-   → Server polls Google until user completes authentication
-   → Tokens are stored encrypted
-   → Returns success with user email
+Note: Device flow CANNOT be used with Gmail scopes. Google explicitly blocks
+restricted scopes (gmail.readonly, gmail.modify, etc.) from device flow.
 """
 
 from __future__ import annotations
@@ -30,19 +31,15 @@ from gmail_mcp.utils.errors import AuthenticationError
 logger = logging.getLogger(__name__)
 
 
-async def gmail_login(device_code: str | None = None) -> dict[str, Any]:
-    """Sign in to Gmail using Google device flow.
+async def gmail_login() -> dict[str, Any]:
+    """Sign in to Gmail using local server OAuth flow.
 
-    Two-step HITL-like flow:
-    1. First call (no device_code): Returns verification URL and user code
-    2. Second call (with device_code): Polls for completion, stores tokens
-
-    Args:
-        device_code: Device code from step 1 (required for step 2).
+    Opens a browser to the Google consent page. After the user approves,
+    the callback is received on localhost and tokens are stored.
 
     Returns:
-        Step 1: {status, verification_uri, user_code, device_code, message}
-        Step 2: {status, email, message}
+        Success: {status: "success", data: {email: "..."}, message: "..."}
+        Error: {status: "error", error: "...", error_code: "..."}
     """
     # Check if OAuth is configured
     if not oauth_manager.is_configured:
@@ -56,24 +53,9 @@ async def gmail_login(device_code: str | None = None) -> dict[str, Any]:
         )
 
     try:
-        if not device_code:
-            # Step 1: Start device flow
-            result = oauth_manager.start_device_flow()
-            return {
-                "status": "awaiting_user_action",
-                "verification_uri": result.get("verification_uri"),
-                "user_code": result.get("user_code"),
-                "device_code": result.get("device_code"),
-                "expires_in": result.get("expires_in"),
-                "message": (
-                    "Visit the verification URL above and enter the user code. "
-                    "Then call this tool again with the device_code parameter."
-                ),
-            }
-
-        # Step 2: Poll for completion
-        logger.info("Polling device flow for completion...")
-        token_data = oauth_manager.poll_device_flow(device_code)
+        # Run local server flow - opens browser and waits for callback
+        logger.info("Starting local server OAuth flow...")
+        token_data = oauth_manager.run_local_server(port=3000, timeout=120)
 
         # Get user email from Gmail profile
         creds = oauth_manager.get_credentials(token_data)
