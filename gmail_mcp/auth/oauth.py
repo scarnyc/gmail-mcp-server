@@ -17,6 +17,7 @@ Security considerations:
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import secrets
@@ -76,8 +77,10 @@ class OAuthManager:
         """Initialize OAuth manager with credentials from environment."""
         self._client_id = os.getenv("GOOGLE_CLIENT_ID")
         self._client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        self._oauth_port = int(os.getenv("OAUTH_PORT", "3000"))
         self._redirect_uri = os.getenv(
-            "GOOGLE_REDIRECT_URI", "http://localhost:3000/oauth/callback"
+            "GOOGLE_REDIRECT_URI",
+            f"http://localhost:{self._oauth_port}/oauth/callback",
         )
 
         if not self._client_id or not self._client_secret:
@@ -94,6 +97,15 @@ class OAuthManager:
             True if both client ID and secret are set, False otherwise.
         """
         return bool(self._client_id and self._client_secret)
+
+    @property
+    def oauth_port(self) -> int:
+        """Get the configured OAuth callback port.
+
+        Returns:
+            Port number for OAuth callback server (default: 3000).
+        """
+        return self._oauth_port
 
     def _get_client_config(self) -> dict[str, Any]:
         """Build OAuth client configuration dictionary.
@@ -300,6 +312,57 @@ class OAuthManager:
     # Local Server Flow (Desktop)
     # =========================================================================
 
+    def _create_server(
+        self,
+        handler_class: type[BaseHTTPRequestHandler],
+        port: int,
+        max_attempts: int = 3,
+    ) -> tuple[HTTPServer, int]:
+        """Create HTTP server with fallback ports.
+
+        Attempts to bind to the specified port, falling back to subsequent
+        ports if the primary port is in use.
+
+        Args:
+            handler_class: HTTP request handler class for the server.
+            port: Primary port to attempt binding.
+            max_attempts: Maximum number of ports to try (default: 3).
+
+        Returns:
+            Tuple of (HTTPServer instance, actual port bound).
+
+        Raises:
+            AuthenticationError: If all port attempts fail.
+        """
+        for attempt in range(max_attempts):
+            try_port = port + attempt
+            try:
+                server = HTTPServer(("localhost", try_port), handler_class)
+                if attempt > 0:
+                    logger.info(
+                        "Using fallback port %d (port %d was in use)",
+                        try_port,
+                        port,
+                    )
+                else:
+                    logger.debug("OAuth callback server bound to port %d", try_port)
+                return server, try_port
+            except OSError as e:
+                # Check for "Address already in use" error (cross-platform)
+                if e.errno == errno.EADDRINUSE or "Address already in use" in str(e):
+                    logger.warning(
+                        "Port %d in use, trying %d...", try_port, try_port + 1
+                    )
+                    continue
+                # Re-raise other OSError types
+                raise
+
+        raise AuthenticationError(
+            f"Could not bind to ports {port}-{port + max_attempts - 1}. "
+            "All ports are in use.",
+            details={"attempted_ports": list(range(port, port + max_attempts))},
+        )
+
     def run_local_server(
         self, port: int = 3000, timeout: int = 120
     ) -> dict[str, object]:
@@ -404,12 +467,20 @@ class OAuthManager:
             def log_message(handler_self, format: str, *args: object) -> None:  # noqa: N805
                 logger.debug("OAuth callback server: %s", format % args)
 
-        # Start local server
-        server = HTTPServer(("localhost", port), CallbackHandler)
+        # Start local server with fallback port strategy
+        server, actual_port = self._create_server(CallbackHandler, port)
         server.timeout = timeout
 
+        # Update auth URL if we're using a different port
+        if actual_port != port:
+            # Regenerate auth URL with correct redirect URI
+            original_redirect = self._redirect_uri
+            self._redirect_uri = f"http://localhost:{actual_port}/oauth/callback"
+            auth_url, state = self.create_auth_url()
+            self._redirect_uri = original_redirect
+
         # Open browser to authorization URL
-        logger.info("Opening browser for authentication...")
+        logger.info("Opening browser for authentication on port %d...", actual_port)
         webbrowser.open(auth_url)
 
         # Wait for callback (single request)
