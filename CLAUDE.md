@@ -37,7 +37,7 @@ gmail_mcp/
 ├── tools/
 │   ├── __init__.py
 │   ├── auth/             # OAuth authentication tools
-│   │   ├── login.py      # gmail_login (device flow)
+│   │   ├── login.py      # gmail_login (uses local server OAuth flow)
 │   │   ├── logout.py     # gmail_logout
 │   │   └── status.py     # gmail_get_auth_status
 │   ├── read/             # Read-only tools (no HITL required)
@@ -294,6 +294,22 @@ user identity from MCP context) is planned for a future release.
 For multi-account use cases, run separate MCP server instances with different
 token storage paths via `TOKEN_STORAGE_PATH` environment variable.
 
+### Gmail Scopes and OAuth Flow
+
+**Note:** Gmail scopes (`gmail.readonly`, `gmail.modify`, `gmail.compose`, `gmail.labels`)
+are classified as "restricted scopes" by Google and cannot use device flow. The `gmail_login`
+tool uses local server flow instead:
+
+1. Opens browser to Google consent page
+2. Runs local HTTP server on `localhost:3000` for callback
+3. Exchanges authorization code for tokens
+
+**Headless environments (Replit, Docker, etc.):**
+Since local server flow requires a browser, headless deployments need alternative strategies:
+1. Pre-authenticate locally, copy encrypted tokens to server
+2. Use Google Workspace service account with domain-wide delegation
+3. Implement a separate web-based OAuth flow with redirect URI
+
 ## Quality Gate Checklist (Phase-Gated Development)
 
 Before proceeding to the next implementation wave, **ALL** checks must pass:
@@ -365,11 +381,11 @@ pytest tests/ -v --tb=short
 
 ### Wave 6 Details (Complete)
 - `tools/auth/__init__.py` - Auth tools package exports
-- `tools/auth/login.py` - `gmail_login` (Google device flow authentication)
+- `tools/auth/login.py` - `gmail_login` (uses local server OAuth flow)
 - `tools/auth/logout.py` - `gmail_logout` (clear stored credentials)
 - `tools/auth/status.py` - `gmail_get_auth_status` (check authentication state)
 - `server.py` - Updated with 15 tool registrations (3 auth + 6 read + 6 write)
-- Tests: `tests/test_tools/test_auth.py` - 9 test cases
+- Tests: `tests/test_tools/test_auth.py` - 9 test cases (4 login, 2 logout, 3 status)
 
 ## Implementation Phases
 
@@ -615,10 +631,19 @@ GOOGLE_CLIENT_SECRET=...
 TOKEN_ENCRYPTION_KEY=<64-char hex>
 TRANSPORT=http
 PORT=3000
-2. OAuth on Replit: Use device flow - no localhost redirect needed
-- User calls auth tool, gets verification URL + code
-- User visits URL on any device, enters code
-- MCP server polls Google until auth completes
+
+2. **⚠️ OAuth on Replit - Device Flow Does NOT Work for Gmail:**
+   Device flow cannot be used with Gmail scopes (see "Known Limitations" above).
+
+   **Alternative authentication strategies for Replit:**
+   - **Option A (Recommended):** Pre-authenticate locally using `run_local_server()`,
+     then copy the encrypted token file (`~/.gmail-mcp/tokens/default.token.enc`)
+     to Replit's persistent storage
+   - **Option B:** Use Google Workspace service account with domain-wide delegation
+     (requires Workspace admin access)
+   - **Option C:** Build a web OAuth flow with Replit URL as redirect URI
+     (requires additional implementation)
+
 3. Token persistence: Store in Replit's persistent storage path
 
 ## Plan Files

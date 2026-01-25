@@ -145,23 +145,17 @@ def _register_auth_tools(mcp: FastMCP) -> None:
             idempotentHint=False,
         ),
     )
-    async def gmail_login_tool(
-        device_code: str | None = None,
-    ) -> dict[str, Any]:
-        """Sign in to Gmail using Google device flow.
+    async def gmail_login_tool() -> dict[str, Any]:
+        """Sign in to Gmail using local server OAuth flow.
 
-        Two-step flow:
-        1. First call (no device_code): Returns verification URL and user code
-        2. Second call (with device_code): Polls for completion, stores tokens
-
-        Args:
-            device_code: Device code from step 1 (required for step 2).
+        Opens a browser to the Google consent page. After the user approves,
+        the callback is received on localhost and tokens are stored.
 
         Returns:
-            Step 1: {verification_uri, user_code, device_code, message}
-            Step 2: {status, email, message}
+            Success: {status, data: {email}, message}
+            Error: {status, error, error_code}
         """
-        return await gmail_login(device_code=device_code)
+        return await gmail_login()
 
     @mcp.tool(
         name="gmail_logout",
