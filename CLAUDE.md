@@ -162,7 +162,7 @@ Following the standard MCP secret management pattern (consistent with JIRA MCP):
 
 1. Generate API credentials:
    - Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-   - Create OAuth 2.0 Client ID (Desktop or Web app)
+   - Create OAuth 2.0 Client ID with type **"Desktop app"** (required for loopback OAuth flow)
    - Download credentials
 
 2. Set environment variables:
@@ -341,6 +341,12 @@ export OAUTH_PORT=4000
 - This is CSRF protection - the callback state doesn't match the request
 - Don't reuse browser tabs/windows from old auth attempts
 - Restart the login flow from the beginning
+
+**"Loopback flow has been blocked" error (Error 400: invalid_request):**
+- Your OAuth client type is incorrect. Google blocks loopback redirects for non-desktop client types
+- Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+- Create a new OAuth 2.0 Client ID with type **"Desktop app"** (not "Web application" or "TV and Limited Input")
+- Update `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` with the new credentials
 
 ## Quality Gate Checklist (Phase-Gated Development)
 
