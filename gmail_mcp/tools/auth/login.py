@@ -54,8 +54,9 @@ async def gmail_login() -> dict[str, Any]:
 
     try:
         # Run local server flow - opens browser and waits for callback
-        logger.info("Starting local server OAuth flow...")
-        token_data = oauth_manager.run_local_server(port=3000, timeout=120)
+        port = oauth_manager.oauth_port
+        logger.info("Starting local server OAuth flow on port %d...", port)
+        token_data = oauth_manager.run_local_server(port=port, timeout=120)
 
         # Get user email from Gmail profile
         creds = oauth_manager.get_credentials(token_data)

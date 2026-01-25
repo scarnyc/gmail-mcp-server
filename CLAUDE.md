@@ -206,6 +206,7 @@ gmail-mcp serve    # Start MCP server (alias for python -m gmail_mcp)
 | `TOKEN_ENCRYPTION_KEY` | Yes | - | 64-char hex (256-bit AES key) |
 | `TRANSPORT` | No | `stdio` | Transport: stdio, http, streamable-http |
 | `PORT` | No | `3000` | HTTP server port |
+| `OAUTH_PORT` | No | `3000` | OAuth callback server port (fallback: +1, +2) |
 | `RATE_LIMIT_MAX` | No | `100` | Requests per minute per user |
 | `HITL_TIMEOUT_MS` | No | `300000` | Approval expiry (5 min) |
 
@@ -309,6 +310,37 @@ Since local server flow requires a browser, headless deployments need alternativ
 1. Pre-authenticate locally, copy encrypted tokens to server
 2. Use Google Workspace service account with domain-wide delegation
 3. Implement a separate web-based OAuth flow with redirect URI
+
+### OAuth Troubleshooting
+
+**Port already in use:**
+```
+OSError: [Errno 48] Address already in use
+```
+The server automatically tries fallback ports (3000 → 3001 → 3002). To use a different primary port:
+```bash
+export OAUTH_PORT=4000
+```
+
+**Browser doesn't open:**
+- Check if running in headless environment (no display)
+- Manually visit the URL printed in logs
+- Ensure `webbrowser` module can access system browser
+
+**Callback never received:**
+- Ensure firewall allows localhost connections on the OAuth port
+- Check browser didn't block the redirect
+- Verify redirect URI in Google Cloud Console matches `http://localhost:{port}/oauth/callback`
+
+**Token storage errors:**
+- Ensure `~/.gmail-mcp/tokens/` directory exists and is writable
+- Check `TOKEN_ENCRYPTION_KEY` is set (64 hex characters = 256-bit key)
+- Verify key hasn't changed since tokens were encrypted
+
+**State mismatch error:**
+- This is CSRF protection - the callback state doesn't match the request
+- Don't reuse browser tabs/windows from old auth attempts
+- Restart the login flow from the beginning
 
 ## Quality Gate Checklist (Phase-Gated Development)
 
