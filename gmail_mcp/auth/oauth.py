@@ -114,7 +114,7 @@ class OAuthManager:
             Client configuration in the format expected by google-auth-oauthlib.
         """
         return {
-            "web": {
+            "installed": {
                 "client_id": self._client_id,
                 "client_secret": self._client_secret,
                 "auth_uri": GOOGLE_AUTH_URI,
