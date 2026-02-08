@@ -23,6 +23,7 @@ from gmail_mcp.tools.base import (
 from gmail_mcp.tools.read import (
     gmail_apply_labels,
     gmail_chat_inbox,
+    gmail_download_email,
     gmail_draft_reply,
     gmail_search,
     gmail_summarize_thread,
@@ -51,6 +52,7 @@ __all__ = [
     # Read tools
     "gmail_apply_labels",
     "gmail_chat_inbox",
+    "gmail_download_email",
     "gmail_draft_reply",
     "gmail_search",
     "gmail_summarize_thread",

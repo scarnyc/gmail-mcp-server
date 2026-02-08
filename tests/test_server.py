@@ -47,17 +47,17 @@ class TestServerCreation:
 class TestToolRegistration:
     """Tests for tool registration verification."""
 
-    def test_all_fifteen_tools_registered(self) -> None:
-        """Test that all 15 tools are registered (3 auth + 6 read + 6 write)."""
+    def test_all_sixteen_tools_registered(self) -> None:
+        """Test that all 16 tools are registered (3 auth + 7 read + 6 write)."""
         from gmail_mcp.server import create_server
 
         server = create_server()
         tools = server._tool_manager.list_tools()
 
-        assert len(tools) == 15
+        assert len(tools) == 16
 
     def test_read_tools_registered(self) -> None:
-        """Test that all 6 read tools are registered."""
+        """Test that all 7 read tools are registered."""
         from gmail_mcp.server import create_server
 
         server = create_server()
@@ -71,6 +71,7 @@ class TestToolRegistration:
             "gmail_search",
             "gmail_chat_inbox",
             "gmail_apply_labels",
+            "gmail_download_email",
         ]
 
         for tool in read_tools:
@@ -118,9 +119,9 @@ class TestToolAnnotations:
         for tool in tools:
             if tool.name in read_only_tools:
                 assert tool.annotations is not None, f"{tool.name} has no annotations"
-                assert tool.annotations.readOnlyHint is True, (
-                    f"{tool.name} should have readOnlyHint=True"
-                )
+                assert (
+                    tool.annotations.readOnlyHint is True
+                ), f"{tool.name} should have readOnlyHint=True"
 
     def test_destructive_tools_have_destructive_hint(self) -> None:
         """Test that destructive tools have destructiveHint=True."""
@@ -140,9 +141,9 @@ class TestToolAnnotations:
         for tool in tools:
             if tool.name in destructive_tools:
                 assert tool.annotations is not None, f"{tool.name} has no annotations"
-                assert tool.annotations.destructiveHint is True, (
-                    f"{tool.name} should have destructiveHint=True"
-                )
+                assert (
+                    tool.annotations.destructiveHint is True
+                ), f"{tool.name} should have destructiveHint=True"
 
     def test_idempotent_tools_have_idempotent_hint(self) -> None:
         """Test that idempotent tools have idempotentHint=True."""
@@ -164,9 +165,9 @@ class TestToolAnnotations:
         for tool in tools:
             if tool.name in idempotent_tools:
                 assert tool.annotations is not None, f"{tool.name} has no annotations"
-                assert tool.annotations.idempotentHint is True, (
-                    f"{tool.name} should have idempotentHint=True"
-                )
+                assert (
+                    tool.annotations.idempotentHint is True
+                ), f"{tool.name} should have idempotentHint=True"
 
     def test_apply_labels_not_readonly(self) -> None:
         """Test that gmail_apply_labels does not have readOnlyHint=True.
@@ -185,9 +186,9 @@ class TestToolAnnotations:
                 # but is also not destructive and is idempotent
                 if tool.annotations:
                     read_only = tool.annotations.readOnlyHint
-                    assert read_only is False, (
-                        "gmail_apply_labels should not have readOnlyHint=True"
-                    )
+                    assert (
+                        read_only is False
+                    ), "gmail_apply_labels should not have readOnlyHint=True"
                 break
 
 
@@ -408,6 +409,6 @@ class TestToolSchemas:
             if tool.name in write_tools:
                 schema = tool.parameters
                 properties = schema.get("properties", {})
-                assert "approval_id" in properties, (
-                    f"{tool.name} missing approval_id parameter"
-                )
+                assert (
+                    "approval_id" in properties
+                ), f"{tool.name} missing approval_id parameter"

@@ -223,3 +223,75 @@ def decode_body(message: dict[str, Any]) -> str:
                 return result
 
     return ""
+
+
+def get_raw_message(service: Resource, message_id: str) -> bytes:
+    """Get raw RFC 2822 email bytes for a message.
+
+    Uses Gmail API format="raw" to get the complete original email,
+    then base64url-decodes the raw field.
+
+    Args:
+        service: Authenticated Gmail API service.
+        message_id: Gmail message ID.
+
+    Returns:
+        Raw email bytes (RFC 2822 format).
+
+    Raises:
+        GmailAPIError: If the API call fails or raw data is missing.
+    """
+    try:
+        response = (
+            service.users()
+            .messages()
+            .get(userId="me", id=message_id, format="raw")
+            .execute()
+        )
+        raw_data = response.get("raw")
+        if not raw_data:
+            raise GmailAPIError(f"No raw data in message {message_id}")
+        return base64.urlsafe_b64decode(raw_data)
+    except GmailAPIError:
+        raise
+    except Exception as e:
+        logger.error("Failed to get raw message %s: %s", message_id, e)
+        raise GmailAPIError(f"Failed to get raw message {message_id}: {e}") from e
+
+
+def get_attachment_data(
+    service: Resource, message_id: str, attachment_id: str
+) -> bytes:
+    """Download attachment data by ID.
+
+    Uses Gmail API attachments().get() to fetch attachment content,
+    then base64url-decodes it.
+
+    Args:
+        service: Authenticated Gmail API service.
+        message_id: Gmail message ID containing the attachment.
+        attachment_id: Attachment ID from the message payload.
+
+    Returns:
+        Raw attachment bytes.
+
+    Raises:
+        GmailAPIError: If the API call fails.
+    """
+    try:
+        response = (
+            service.users()
+            .messages()
+            .attachments()
+            .get(userId="me", messageId=message_id, id=attachment_id)
+            .execute()
+        )
+        return base64.urlsafe_b64decode(response["data"])
+    except Exception as e:
+        logger.error(
+            "Failed to get attachment %s from message %s: %s",
+            attachment_id,
+            message_id,
+            e,
+        )
+        raise GmailAPIError(f"Failed to get attachment {attachment_id}: {e}") from e
