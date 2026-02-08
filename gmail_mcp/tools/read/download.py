@@ -61,7 +61,7 @@ def _extract_html_body(msg: email.message.EmailMessage) -> str | None:
     """Extract the HTML body from a parsed email message."""
     if msg.get_content_type() == "text/html":
         payload = msg.get_payload(decode=True)
-        if payload:
+        if isinstance(payload, bytes):
             charset = msg.get_content_charset() or "utf-8"
             return payload.decode(charset, errors="replace")
 
@@ -69,7 +69,7 @@ def _extract_html_body(msg: email.message.EmailMessage) -> str | None:
         for part in msg.walk():
             if part.get_content_type() == "text/html":
                 payload = part.get_payload(decode=True)
-                if payload:
+                if isinstance(payload, bytes):
                     charset = part.get_content_charset() or "utf-8"
                     return payload.decode(charset, errors="replace")
 
@@ -88,7 +88,7 @@ def _extract_attachments(
 
         if filename or "attachment" in content_disposition:
             data = part.get_payload(decode=True)
-            if data:
+            if isinstance(data, bytes):
                 safe_name = _sanitize_filename(filename or "attachment")
                 if filename and "." in filename:
                     ext = filename.rsplit(".", 1)[-1][:10]
