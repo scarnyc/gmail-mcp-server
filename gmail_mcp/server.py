@@ -1,10 +1,10 @@
 """FastMCP server for Gmail MCP.
 
-This module provides the FastMCP server instance with all 15 tool registrations.
+This module provides the FastMCP server instance with all 16 tool registrations.
 Tools are organized into three categories:
 
 - Auth Tools (3): OAuth authentication operations
-- Read Tools (6): Read-only operations that do not require HITL approval
+- Read Tools (7): Read-only operations that do not require HITL approval
 - Write Tools (6): Destructive operations that require human-in-the-loop approval
 
 The server uses a lifespan context manager to perform cleanup of expired approvals
@@ -32,6 +32,7 @@ from gmail_mcp.schemas.tools import (
     ChatInboxParams,
     CreateLabelParams,
     DeleteEmailParams,
+    DownloadEmailParams,
     DraftReplyParams,
     OrganizeLabelsParams,
     SearchParams,
@@ -48,6 +49,7 @@ from gmail_mcp.tools import (
     gmail_chat_inbox,
     gmail_create_label,
     gmail_delete_email,
+    gmail_download_email,
     gmail_draft_reply,
     gmail_get_auth_status,
     gmail_login,
@@ -402,6 +404,46 @@ def _register_read_tools(mcp: FastMCP) -> None:
         )
         return await gmail_apply_labels(params)
 
+    @mcp.tool(
+        name="gmail_download_email",
+        annotations=ToolAnnotations(
+            readOnlyHint=True,
+            destructiveHint=False,
+            idempotentHint=True,
+        ),
+    )
+    async def gmail_download_email_tool(
+        message_id: str,
+        output_dir: str,
+        filename_prefix: str = "",
+    ) -> dict[str, Any]:
+        """Download an email as .eml file, HTML, and attachments.
+
+        Fetches the raw email from Gmail, saves it as:
+        1. .eml file (complete RFC 2822 email for archival)
+        2. .html file (HTML body saved for viewing or PDF conversion)
+        3. Attachment files (any file attachments extracted and saved)
+
+        Files are named using the pattern: {prefix}_{subject}_{date}.{ext}
+
+        This tool only writes to the local filesystem and does not modify
+        any Gmail data. Use with gmail_search to find message IDs first.
+
+        Args:
+            message_id: Gmail message ID to download (from gmail_search results).
+            output_dir: Local directory to save files to (created if needed).
+            filename_prefix: Optional prefix for filenames (e.g., "anthropic").
+
+        Returns:
+            Paths to all saved files and email metadata.
+        """
+        params = DownloadEmailParams(
+            message_id=message_id,
+            output_dir=output_dir,
+            filename_prefix=filename_prefix,
+        )
+        return await gmail_download_email(params)
+
 
 # =============================================================================
 # Write Tool Wrappers
@@ -654,7 +696,7 @@ def create_server() -> FastMCP:
 
     Creates a FastMCP server with:
     - Lifespan context manager for startup/shutdown cleanup
-    - All 15 Gmail tools registered with appropriate annotations
+    - All 16 Gmail tools registered with appropriate annotations
 
     Returns:
         Configured FastMCP server instance.
@@ -668,7 +710,7 @@ def create_server() -> FastMCP:
     _register_read_tools(server)
     _register_write_tools(server)
 
-    logger.info("Gmail MCP server created with 15 tools registered")
+    logger.info("Gmail MCP server created with 16 tools registered")
     return server
 
 
