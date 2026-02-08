@@ -112,6 +112,27 @@ class ApplyLabelsParams(BaseModel):
     )
 
 
+class DownloadEmailParams(BaseModel):
+    """Parameters for gmail_download_email tool.
+
+    Downloads an email as .eml file, saves HTML body as .html,
+    and extracts file attachments to a local directory.
+    """
+
+    message_id: str = Field(
+        ...,
+        description="Gmail message ID to download",
+    )
+    output_dir: str = Field(
+        ...,
+        description="Directory to save files to (created if it doesn't exist)",
+    )
+    filename_prefix: str = Field(
+        default="",
+        description="Optional prefix for saved filenames (e.g., vendor name)",
+    )
+
+
 # =============================================================================
 # Write Tool Parameter Models (HITL Required)
 # =============================================================================
