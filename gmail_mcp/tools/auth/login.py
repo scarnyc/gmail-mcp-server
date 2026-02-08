@@ -86,6 +86,6 @@ async def gmail_login() -> dict[str, Any]:
     except Exception as e:
         logger.error("Unexpected error during login: %s", e)
         return build_error_response(
-            error=f"Login failed: {e}",
+            error="Login failed due to an unexpected error. Check server logs.",
             error_code="LoginError",
         )

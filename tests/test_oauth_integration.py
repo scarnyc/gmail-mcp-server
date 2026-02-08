@@ -248,12 +248,11 @@ class TestOAuthStateValidation:
             assert f"state={custom_state}" in auth_url
 
     def test_state_validation_with_fallback_port(self):
-        """Test state parameter is correctly captured when using fallback port.
+        """Test run_local_server succeeds with correct state after port fallback.
 
-        This test verifies that the state parameter captured in the callback
-        handler closure is stable even when port fallback occurs. The closure
-        captures state before _create_server() is called, so it should remain
-        consistent regardless of which port is actually bound.
+        Blocks the primary port to force fallback, then simulates a browser
+        callback with the correct state parameter. Verifies the full flow
+        produces a valid authorization code exchange.
         """
         with patch.dict(
             "os.environ",
@@ -271,32 +270,113 @@ class TestOAuthStateValidation:
             blocker.bind(("localhost", test_port))
             blocker.listen(1)
 
+            mock_token_data = {
+                "access_token": "ya29.fallback_test",
+                "refresh_token": "refresh_fallback",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+
             try:
-                # Generate state before server creation (same as run_local_server)
-                auth_url, expected_state = manager.create_auth_url()
+                # Capture the auth URL opened in the browser to extract state
+                opened_urls: list[str] = []
 
-                # Verify state is in the auth URL
-                assert f"state={expected_state}" in auth_url
+                def capture_url(url: str) -> bool:
+                    opened_urls.append(url)
+                    # Simulate browser callback: extract state from URL and
+                    # POST back to the fallback port with code + state
+                    from urllib.parse import parse_qs, urlparse
 
-                class DummyHandler(BaseHTTPRequestHandler):
-                    pass
+                    parsed = urlparse(url)
+                    params = parse_qs(parsed.query)
+                    callback_state = params["state"][0]
+                    callback_port = test_port + 1  # Expected fallback port
 
-                # Create server with fallback (will use test_port + 1)
-                server, actual_port = manager._create_server(
-                    DummyHandler, test_port
-                )
-                server.server_close()
+                    def send_callback() -> None:
+                        import time
+                        import urllib.request
 
-                # Verify fallback occurred
-                assert actual_port == test_port + 1
+                        time.sleep(0.1)  # Let server start listening
+                        try:
+                            urllib.request.urlopen(
+                                f"http://localhost:{callback_port}/oauth/callback"
+                                f"?code=test_auth_code&state={callback_state}"
+                            )
+                        except Exception:
+                            pass
 
-                # The key assertion: state generated before _create_server
-                # should be the same state that would be validated in callback
-                # (This verifies the closure captures the correct state)
-                auth_url_after, state_after = manager.create_auth_url(
-                    state=expected_state
-                )
-                assert state_after == expected_state
+                    t = threading.Thread(target=send_callback)
+                    t.start()
+                    return True
+
+                with (
+                    patch("webbrowser.open", side_effect=capture_url),
+                    patch.object(
+                        manager, "exchange_code", return_value=mock_token_data
+                    ),
+                ):
+                    result = manager.run_local_server(
+                        port=test_port, timeout=5
+                    )
+
+                # Verify fallback port was used (state in URL targets port+1)
+                assert len(opened_urls) == 1
+                assert f"localhost%3A{test_port + 1}" in opened_urls[0] or \
+                    f"localhost:{test_port + 1}" in opened_urls[0]
+
+                # Verify exchange_code was called (state matched successfully)
+                assert result == mock_token_data
+
+            finally:
+                blocker.close()
+
+    def test_state_mismatch_rejected_with_fallback_port(self):
+        """Test callback with wrong state is rejected after port fallback.
+
+        Blocks the primary port, then simulates a callback with a WRONG
+        state parameter. Verifies the handler rejects the request.
+        """
+        with patch.dict(
+            "os.environ",
+            {
+                "GOOGLE_CLIENT_ID": "test_client_id",
+                "GOOGLE_CLIENT_SECRET": "test_secret",
+            },
+        ):
+            manager = OAuthManager()
+
+            test_port = 59162
+            blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            blocker.bind(("localhost", test_port))
+            blocker.listen(1)
+
+            try:
+
+                def send_bad_callback(url: str) -> bool:
+                    callback_port = test_port + 1
+
+                    def send_callback() -> None:
+                        import time
+                        import urllib.request
+
+                        time.sleep(0.1)
+                        try:
+                            urllib.request.urlopen(
+                                f"http://localhost:{callback_port}/oauth/callback"
+                                f"?code=test_code&state=WRONG_STATE"
+                            )
+                        except Exception:
+                            pass
+
+                    t = threading.Thread(target=send_callback)
+                    t.start()
+                    return True
+
+                from gmail_mcp.utils.errors import AuthenticationError
+
+                with patch("webbrowser.open", side_effect=send_bad_callback):
+                    with pytest.raises(AuthenticationError, match="State mismatch"):
+                        manager.run_local_server(port=test_port, timeout=5)
 
             finally:
                 blocker.close()

@@ -113,6 +113,9 @@ class OAuthManager:
         Returns:
             Client configuration in the format expected by google-auth-oauthlib.
         """
+        # "installed" = Desktop app client type (required by Google for
+        # loopback OAuth flows). "web" client type causes Error 400:
+        # "Loopback flow has been blocked" with Gmail scopes.
         return {
             "installed": {
                 "client_id": self._client_id,
@@ -388,9 +391,10 @@ class OAuthManager:
             >>> token = manager.run_local_server()
             >>> token_storage.save("user@example.com", token)
         """
-        auth_url, state = self.create_auth_url()
         result: dict[str, Any] = {}
         error: Exception | None = None
+        # state is set after the port is determined (below the handler class)
+        state: str = ""
 
         class CallbackHandler(BaseHTTPRequestHandler):
             """HTTP request handler for OAuth callback."""
@@ -471,13 +475,16 @@ class OAuthManager:
         server, actual_port = self._create_server(CallbackHandler, port)
         server.timeout = timeout
 
-        # Update auth URL if we're using a different port
+        # Generate auth URL ONCE, using the actual bound port.
+        # This avoids generating the state parameter twice (which would
+        # require the closure to track which state value is current).
         if actual_port != port:
-            # Regenerate auth URL with correct redirect URI
             original_redirect = self._redirect_uri
             self._redirect_uri = f"http://localhost:{actual_port}/oauth/callback"
             auth_url, state = self.create_auth_url()
             self._redirect_uri = original_redirect
+        else:
+            auth_url, state = self.create_auth_url()
 
         # Open browser to authorization URL
         logger.info("Opening browser for authentication on port %d...", actual_port)

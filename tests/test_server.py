@@ -47,14 +47,14 @@ class TestServerCreation:
 class TestToolRegistration:
     """Tests for tool registration verification."""
 
-    def test_all_twelve_tools_registered(self) -> None:
-        """Test that all 12 tools are registered."""
+    def test_all_fifteen_tools_registered(self) -> None:
+        """Test that all 15 tools are registered (3 auth + 6 read + 6 write)."""
         from gmail_mcp.server import create_server
 
         server = create_server()
         tools = server._tool_manager.list_tools()
 
-        assert len(tools) == 12
+        assert len(tools) == 15
 
     def test_read_tools_registered(self) -> None:
         """Test that all 6 read tools are registered."""
