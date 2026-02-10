@@ -79,8 +79,9 @@ def main() -> None:
         sys.exit(1)
 
     # Log read-only mode
-    read_only = os.getenv("READ_ONLY", "").lower() in ("true", "1", "yes")
-    if read_only:
+    from gmail_mcp.auth.oauth import is_read_only
+
+    if is_read_only():
         logger.info("Running in READ-ONLY mode (only gmail.readonly scope)")
 
     # Import server after environment is validated

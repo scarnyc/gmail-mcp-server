@@ -9,24 +9,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from gmail_mcp.auth.oauth import get_gmail_scopes, is_read_only
+from gmail_mcp.auth.oauth import get_gmail_scopes, is_read_only, scope_labels
 from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.gmail.client import gmail_client
 from gmail_mcp.tools.base import build_error_response, build_success_response
 from gmail_mcp.utils.errors import AuthenticationError
 
 logger = logging.getLogger(__name__)
-
-# Short labels for display (strip the full URL prefix)
-_SCOPE_PREFIX = "https://www.googleapis.com/auth/gmail."
-
-
-def _scope_labels(scopes: list[str]) -> list[str]:
-    """Convert full scope URLs to short labels for display."""
-    return [
-        s.removeprefix(_SCOPE_PREFIX) if s.startswith(_SCOPE_PREFIX) else s
-        for s in scopes
-    ]
 
 
 async def gmail_get_auth_status() -> dict[str, Any]:
@@ -56,22 +45,26 @@ async def gmail_get_auth_status() -> dict[str, Any]:
                 "authenticated": False,
                 "email": None,
                 "mode": mode,
-                "expected_scopes": _scope_labels(expected_scopes),
+                "expected_scopes": scope_labels(expected_scopes),
             },
             message="Not authenticated. Use gmail_login to sign in.",
         )
 
-    # Load stored token to check scopes
-    token_data = token_storage.load(user_id)
+    # Safe defaults in case token loading fails
     token_scopes: list[str] = []
-    if token_data:
-        raw_scopes = token_data.get("scopes")
-        if isinstance(raw_scopes, list):
-            token_scopes = [str(s) for s in raw_scopes]
-
-    scope_mismatch = set(token_scopes) != set(expected_scopes)
+    scope_mismatch = False
 
     try:
+        # Load stored token to check scopes
+        token_data = token_storage.load(user_id)
+        if token_data:
+            raw_scopes = token_data.get("scopes")
+            if isinstance(raw_scopes, list):
+                token_scopes = [str(s) for s in raw_scopes]
+
+        # Order-independent comparison — Google doesn't guarantee scope order
+        scope_mismatch = set(token_scopes) != set(expected_scopes)
+
         # Try to get service and fetch profile to verify credentials work
         service = gmail_client.get_service(user_id)
         profile = service.users().getProfile(userId="me").execute()
@@ -89,8 +82,8 @@ async def gmail_get_auth_status() -> dict[str, Any]:
                 "authenticated": True,
                 "email": user_email,
                 "mode": mode,
-                "expected_scopes": _scope_labels(expected_scopes),
-                "token_scopes": _scope_labels(token_scopes),
+                "expected_scopes": scope_labels(expected_scopes),
+                "token_scopes": scope_labels(token_scopes),
                 "scope_mismatch": scope_mismatch,
             },
             message=message,
@@ -104,8 +97,8 @@ async def gmail_get_auth_status() -> dict[str, Any]:
                 "authenticated": False,
                 "email": None,
                 "mode": mode,
-                "expected_scopes": _scope_labels(expected_scopes),
-                "token_scopes": _scope_labels(token_scopes),
+                "expected_scopes": scope_labels(expected_scopes),
+                "token_scopes": scope_labels(token_scopes),
                 "scope_mismatch": scope_mismatch,
             },
             message=(

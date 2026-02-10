@@ -22,7 +22,6 @@ Usage:
 """
 
 from gmail_mcp.auth.oauth import (
-    GMAIL_SCOPES,
     GOOGLE_AUTH_URI,
     GOOGLE_DEVICE_AUTH_URI,
     GOOGLE_TOKEN_URI,
@@ -36,7 +35,6 @@ __all__ = [
     # OAuth
     "OAuthManager",
     "oauth_manager",
-    "GMAIL_SCOPES",
     "GOOGLE_AUTH_URI",
     "GOOGLE_TOKEN_URI",
     "GOOGLE_DEVICE_AUTH_URI",

@@ -55,7 +55,7 @@ gmail_mcp/
 │   │   ├── search.py     # gmail_search
 │   │   ├── chat.py       # gmail_chat_inbox
 │   │   ├── download.py   # gmail_download_email
-│   │   └── labels.py     # gmail_apply_labels
+│   │   └── labels.py     # gmail_apply_labels (full mode only)
 │   └── write/            # Write tools (HITL required)
 │       ├── send.py       # gmail_send_email
 │       ├── archive.py    # gmail_archive_email

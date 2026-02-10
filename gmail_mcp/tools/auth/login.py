@@ -22,7 +22,12 @@ from typing import Any
 
 from googleapiclient.discovery import build
 
-from gmail_mcp.auth.oauth import get_gmail_scopes, is_read_only, oauth_manager
+from gmail_mcp.auth.oauth import (
+    get_gmail_scopes,
+    is_read_only,
+    oauth_manager,
+    scope_labels,
+)
 from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.gmail.client import gmail_client
 from gmail_mcp.tools.base import build_error_response, build_success_response
@@ -53,6 +58,17 @@ async def gmail_login() -> dict[str, Any]:
         )
 
     try:
+        # Revoke existing token with Google before re-authenticating.
+        # This clears previously-granted scopes so the consent screen
+        # only shows the scopes for the current mode (e.g. read-only).
+        existing_token = token_storage.load("default")
+        if existing_token is not None:
+            access_token = existing_token.get("access_token")
+            if isinstance(access_token, str) and access_token:
+                oauth_manager.revoke_token(access_token)
+            token_storage.delete("default")
+            gmail_client.invalidate("default")
+
         # Run local server flow - opens browser and waits for callback
         port = oauth_manager.oauth_port
         logger.info("Starting local server OAuth flow on port %d...", port)
@@ -79,7 +95,7 @@ async def gmail_login() -> dict[str, Any]:
             data={
                 "email": user_email,
                 "mode": mode,
-                "scopes": scopes,
+                "scopes": scope_labels(scopes),
             },
             message=f"Successfully authenticated as {user_email} ({mode} mode)",
         )

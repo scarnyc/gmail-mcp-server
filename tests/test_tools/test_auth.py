@@ -39,6 +39,7 @@ class TestGmailLogin:
             mock_oauth.oauth_port = 3000  # Default port
             mock_oauth.run_local_server.return_value = mock_token_data
             mock_oauth.get_credentials.return_value = MagicMock()
+            mock_storage.load.return_value = None  # No existing token
 
             mock_service = MagicMock()
             mock_users = mock_service.users.return_value
@@ -52,11 +53,63 @@ class TestGmailLogin:
             assert result["status"] == "success"
             assert result["data"]["email"] == "user@gmail.com"
             assert result["data"]["mode"] == "read_only"
-            assert result["data"]["scopes"] == [self.READONLY_SCOPE]
+            assert result["data"]["scopes"] == ["readonly"]
             assert "read_only" in result["message"]
             mock_oauth.run_local_server.assert_called_once_with(port=3000, timeout=120)
             mock_storage.save.assert_called_once_with("default", mock_token_data)
             mock_client.invalidate.assert_called_once_with("default")
+
+    @pytest.mark.asyncio
+    async def test_login_revokes_existing_token_before_reauth(self):
+        """Test login revokes existing token with Google before re-authenticating."""
+        existing_token_data = {
+            "access_token": "ya29.old_token",
+            "refresh_token": "old_refresh",
+        }
+        new_token_data = {
+            "access_token": "ya29.new_token",
+            "refresh_token": "new_refresh",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+        mock_profile = {"emailAddress": "user@gmail.com"}
+
+        with (
+            patch("gmail_mcp.tools.auth.login.oauth_manager") as mock_oauth,
+            patch("gmail_mcp.tools.auth.login.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.login.gmail_client"),
+            patch("gmail_mcp.tools.auth.login.build") as mock_build,
+            patch("gmail_mcp.tools.auth.login.is_read_only", return_value=True),
+            patch(
+                "gmail_mcp.tools.auth.login.get_gmail_scopes",
+                return_value=[self.READONLY_SCOPE],
+            ),
+        ):
+            mock_oauth.is_configured = True
+            mock_oauth.oauth_port = 3000
+            mock_oauth.run_local_server.return_value = new_token_data
+            mock_oauth.get_credentials.return_value = MagicMock()
+            mock_oauth.revoke_token.return_value = True
+            mock_storage.load.return_value = existing_token_data
+
+            mock_service = MagicMock()
+            mock_users = mock_service.users.return_value
+            mock_users.getProfile.return_value.execute.return_value = (
+                mock_profile
+            )
+            mock_build.return_value = mock_service
+
+            from gmail_mcp.tools.auth.login import gmail_login
+
+            result = await gmail_login()
+
+            assert result["status"] == "success"
+            # Verify old token was revoked before re-auth
+            mock_oauth.revoke_token.assert_called_once_with("ya29.old_token")
+            mock_storage.delete.assert_called_once_with("default")
+            # New token saved after successful re-auth
+            mock_storage.save.assert_called_once_with(
+                "default", new_token_data
+            )
 
     @pytest.mark.asyncio
     async def test_login_not_configured_returns_error(self):
@@ -151,7 +204,9 @@ class TestGmailLogout:
         with (
             patch("gmail_mcp.tools.auth.logout.gmail_client") as mock_client,
             patch("gmail_mcp.tools.auth.logout.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.logout.oauth_manager"),
         ):
+            mock_storage.load.return_value = None  # No token to revoke
             mock_storage.delete.return_value = True
 
             from gmail_mcp.tools.auth.logout import gmail_logout
@@ -169,7 +224,9 @@ class TestGmailLogout:
         with (
             patch("gmail_mcp.tools.auth.logout.gmail_client") as mock_client,
             patch("gmail_mcp.tools.auth.logout.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.logout.oauth_manager"),
         ):
+            mock_storage.load.return_value = None  # No token to revoke
             mock_storage.delete.return_value = False
 
             from gmail_mcp.tools.auth.logout import gmail_logout
@@ -180,6 +237,31 @@ class TestGmailLogout:
             assert result["data"]["logged_out"] is False
             assert "Already logged out" in result["message"]
             mock_client.invalidate.assert_called_once_with("default")
+
+
+    @pytest.mark.asyncio
+    async def test_logout_revokes_token_with_google(self):
+        """Test logout revokes the token with Google before deleting locally."""
+        with (
+            patch("gmail_mcp.tools.auth.logout.gmail_client"),
+            patch("gmail_mcp.tools.auth.logout.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.logout.oauth_manager") as mock_oauth,
+        ):
+            mock_storage.load.return_value = {
+                "access_token": "ya29.existing_token",
+            }
+            mock_storage.delete.return_value = True
+            mock_oauth.revoke_token.return_value = True
+
+            from gmail_mcp.tools.auth.logout import gmail_logout
+
+            result = await gmail_logout()
+
+            assert result["status"] == "success"
+            assert result["data"]["logged_out"] is True
+            mock_oauth.revoke_token.assert_called_once_with(
+                "ya29.existing_token"
+            )
 
 
 class TestGmailGetAuthStatus:

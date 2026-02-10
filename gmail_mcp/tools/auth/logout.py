@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from gmail_mcp.auth.oauth import oauth_manager
 from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.gmail.client import gmail_client
 from gmail_mcp.tools.base import build_success_response
@@ -31,6 +32,18 @@ async def gmail_logout() -> dict[str, Any]:
 
     # Invalidate cached service first
     gmail_client.invalidate(user_id)
+
+    # Revoke token with Google before deleting locally.
+    # This removes the app's granted scopes from the user's Google account,
+    # so re-authentication will only show newly-requested scopes.
+    try:
+        existing_token = token_storage.load(user_id)
+        if existing_token is not None:
+            access_token = existing_token.get("access_token")
+            if isinstance(access_token, str) and access_token:
+                oauth_manager.revoke_token(access_token)
+    except TokenError as e:
+        logger.warning("Could not load token for revocation: %s", e)
 
     # Delete stored token
     try:

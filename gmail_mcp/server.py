@@ -1,11 +1,16 @@
 """FastMCP server for Gmail MCP.
 
-This module provides the FastMCP server instance with all 16 tool registrations.
-Tools are organized into three categories:
+This module provides the FastMCP server instance with tool registrations.
+The number of registered tools depends on the READ_ONLY environment variable:
 
-- Auth Tools (3): OAuth authentication operations
-- Read Tools (7): Read-only operations that do not require HITL approval
-- Write Tools (6): Destructive operations that require human-in-the-loop approval
+- Full mode (READ_ONLY=false, default): 16 tools
+  - Auth Tools (3): OAuth authentication operations
+  - Read Tools (7): Read-only operations (no HITL required), includes apply_labels
+  - Write Tools (6): Destructive operations requiring human-in-the-loop approval
+
+- Read-only mode (READ_ONLY=true): 9 tools
+  - Auth Tools (3): OAuth authentication operations
+  - Read Tools (6): Read-only operations (no HITL required), excludes apply_labels
 
 The server uses a lifespan context manager to perform cleanup of expired approvals
 and stale rate limiter buckets at startup.
@@ -22,6 +27,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
 # Import singletons
+from gmail_mcp.auth.oauth import is_read_only
 from gmail_mcp.hitl.manager import approval_manager
 from gmail_mcp.middleware.rate_limiter import rate_limiter
 
@@ -717,8 +723,6 @@ def create_server() -> FastMCP:
     Returns:
         Configured FastMCP server instance.
     """
-    from gmail_mcp.auth.oauth import is_read_only
-
     read_only = is_read_only()
 
     server = FastMCP(
@@ -730,14 +734,20 @@ def create_server() -> FastMCP:
     _register_read_tools(server, read_only=read_only)
 
     if read_only:
-        # 3 auth + 6 read tools (apply_labels excluded)
+        # 3 auth + 6 read tools (apply_labels excluded).
+        # Note: dynamic counting via server._tool_manager.list_tools() is
+        # possible from an async context, but hardcoded values are validated
+        # by test_tool_registration_count / test_read_only_tool_registration.
         tool_count = 9
         logger.info(
             "Gmail MCP server created in READ-ONLY mode with %d tools", tool_count
         )
     else:
         _register_write_tools(server)
-        # 3 auth + 7 read + 6 write
+        # 3 auth + 7 read + 6 write.
+        # Note: dynamic counting via server._tool_manager.list_tools() is
+        # possible from an async context, but hardcoded values are validated
+        # by test_tool_registration_count / test_read_only_tool_registration.
         tool_count = 16
         logger.info("Gmail MCP server created with %d tools registered", tool_count)
 

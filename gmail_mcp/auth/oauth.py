@@ -49,23 +49,38 @@ GMAIL_SCOPES_READONLY = [
 ]
 
 
+# Cache READ_ONLY at module init to prevent inconsistency if env changes at runtime.
+# Accepts case-insensitive "true", "1", or "yes".
+_READ_ONLY_MODE = os.getenv("READ_ONLY", "").lower() in ("true", "1", "yes")
+
+
 def is_read_only() -> bool:
     """Check if server is running in read-only mode."""
-    return os.getenv("READ_ONLY", "").lower() in ("true", "1", "yes")
+    return _READ_ONLY_MODE
 
 
 def get_gmail_scopes() -> list[str]:
     """Get Gmail API scopes based on server mode.
 
     Returns read-only scope when READ_ONLY=true, full scopes otherwise.
+    Always returns a defensive copy to prevent mutation of module constants.
     """
     if is_read_only():
-        return GMAIL_SCOPES_READONLY
-    return GMAIL_SCOPES_FULL
+        return list(GMAIL_SCOPES_READONLY)
+    return list(GMAIL_SCOPES_FULL)
 
 
-# Backward-compatible alias — prefer get_gmail_scopes() for mode-aware usage
-GMAIL_SCOPES = GMAIL_SCOPES_FULL
+# Short labels for display (strip the full URL prefix)
+_SCOPE_PREFIX = "https://www.googleapis.com/auth/gmail."
+
+
+def scope_labels(scopes: list[str]) -> list[str]:
+    """Convert full scope URLs to short labels for display."""
+    return [
+        s.removeprefix(_SCOPE_PREFIX) if s.startswith(_SCOPE_PREFIX) else s
+        for s in scopes
+    ]
+
 
 # Google OAuth endpoints
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -267,6 +282,41 @@ class OAuthManager:
                 f"Failed to exchange authorization code: {e}",
                 details={"error_type": type(e).__name__},
             ) from e
+
+    def revoke_token(self, token: str) -> bool:
+        """Revoke an OAuth token with Google.
+
+        Calls Google's revocation endpoint to invalidate the token and
+        remove the app's granted scopes from the user's Google account.
+        This ensures subsequent consent screens only show newly-requested
+        scopes, not previously-granted ones.
+
+        Args:
+            token: Access token or refresh token to revoke.
+
+        Returns:
+            True if revocation succeeded, False if it failed (non-fatal).
+        """
+        try:
+            response = requests.post(
+                "https://oauth2.googleapis.com/revoke",
+                params={"token": token},
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            if response.status_code == 200:
+                logger.info("Successfully revoked token with Google")
+                return True
+            else:
+                logger.warning(
+                    "Token revocation returned status %d: %s",
+                    response.status_code,
+                    response.text[:200],
+                )
+                return False
+        except requests.RequestException as e:
+            logger.warning("Failed to revoke token (non-fatal): %s", e)
+            return False
 
     def refresh_credentials(self, token_data: dict[str, object]) -> dict[str, object]:
         """Refresh expired access token using refresh token.
@@ -721,11 +771,11 @@ oauth_manager = OAuthManager()
 __all__ = [
     "OAuthManager",
     "oauth_manager",
-    "GMAIL_SCOPES",
     "GMAIL_SCOPES_FULL",
     "GMAIL_SCOPES_READONLY",
     "get_gmail_scopes",
     "is_read_only",
+    "scope_labels",
     "GOOGLE_AUTH_URI",
     "GOOGLE_TOKEN_URI",
     "GOOGLE_DEVICE_AUTH_URI",
