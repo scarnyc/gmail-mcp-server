@@ -22,7 +22,7 @@ from typing import Any
 
 from googleapiclient.discovery import build
 
-from gmail_mcp.auth.oauth import oauth_manager
+from gmail_mcp.auth.oauth import get_gmail_scopes, is_read_only, oauth_manager
 from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.gmail.client import gmail_client
 from gmail_mcp.tools.base import build_error_response, build_success_response
@@ -72,9 +72,16 @@ async def gmail_login() -> dict[str, Any]:
 
         logger.info("Successfully authenticated user: %s", user_email)
 
+        mode = "read_only" if is_read_only() else "full_access"
+        scopes = get_gmail_scopes()
+
         return build_success_response(
-            data={"email": user_email},
-            message=f"Successfully authenticated as {user_email}",
+            data={
+                "email": user_email,
+                "mode": mode,
+                "scopes": scopes,
+            },
+            message=f"Successfully authenticated as {user_email} ({mode} mode)",
         )
 
     except AuthenticationError as e:

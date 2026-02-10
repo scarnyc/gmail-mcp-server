@@ -190,12 +190,19 @@ def _register_auth_tools(mcp: FastMCP) -> None:
     async def gmail_get_auth_status_tool() -> dict[str, Any]:
         """Check if the user is authenticated with Gmail.
 
-        Returns the authentication status and user email if authenticated.
+        Returns the authentication status, user email, server mode,
+        and scope information. If token scopes don't match the current
+        mode's expected scopes, scope_mismatch will be True and the
+        user should re-authenticate with gmail_login.
 
         Returns:
             Success response with authentication status:
             - authenticated: True/False
             - email: User's email if authenticated, None otherwise
+            - mode: "read_only" or "full_access"
+            - expected_scopes: Scopes the current mode expects
+            - token_scopes: Scopes stored in the token (if authenticated)
+            - scope_mismatch: True if token scopes don't match expected
         """
         return await gmail_get_auth_status()
 

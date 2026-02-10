@@ -1,7 +1,7 @@
 """Gmail auth status tool - Check authentication state.
 
 This tool checks whether the user is authenticated and returns
-their email address if so.
+their email address, current mode, and scope information.
 """
 
 from __future__ import annotations
@@ -9,24 +9,45 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from gmail_mcp.auth.oauth import get_gmail_scopes, is_read_only
+from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.gmail.client import gmail_client
 from gmail_mcp.tools.base import build_error_response, build_success_response
 from gmail_mcp.utils.errors import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
+# Short labels for display (strip the full URL prefix)
+_SCOPE_PREFIX = "https://www.googleapis.com/auth/gmail."
+
+
+def _scope_labels(scopes: list[str]) -> list[str]:
+    """Convert full scope URLs to short labels for display."""
+    return [
+        s.removeprefix(_SCOPE_PREFIX) if s.startswith(_SCOPE_PREFIX) else s
+        for s in scopes
+    ]
+
 
 async def gmail_get_auth_status() -> dict[str, Any]:
     """Check if the user is authenticated with Gmail.
 
-    Returns the authentication status and user email if authenticated.
+    Returns the authentication status, user email, server mode,
+    and scope information (expected vs stored token scopes).
 
     Returns:
         Success response with authentication status:
         - authenticated: True/False
         - email: User's email if authenticated, None otherwise
+        - mode: "read_only" or "full_access"
+        - expected_scopes: Scopes the current mode expects
+        - token_scopes: Scopes stored in the token (if authenticated)
+        - scope_mismatch: True if token scopes don't match expected
     """
     user_id = "default"  # Single-user mode
+    read_only = is_read_only()
+    mode = "read_only" if read_only else "full_access"
+    expected_scopes = get_gmail_scopes()
 
     # Check if credentials exist
     if not gmail_client.is_authenticated(user_id):
@@ -34,9 +55,21 @@ async def gmail_get_auth_status() -> dict[str, Any]:
             data={
                 "authenticated": False,
                 "email": None,
+                "mode": mode,
+                "expected_scopes": _scope_labels(expected_scopes),
             },
             message="Not authenticated. Use gmail_login to sign in.",
         )
+
+    # Load stored token to check scopes
+    token_data = token_storage.load(user_id)
+    token_scopes: list[str] = []
+    if token_data:
+        raw_scopes = token_data.get("scopes")
+        if isinstance(raw_scopes, list):
+            token_scopes = [str(s) for s in raw_scopes]
+
+    scope_mismatch = set(token_scopes) != set(expected_scopes)
 
     try:
         # Try to get service and fetch profile to verify credentials work
@@ -44,12 +77,23 @@ async def gmail_get_auth_status() -> dict[str, Any]:
         profile = service.users().getProfile(userId="me").execute()
         user_email = profile["emailAddress"]
 
+        message = f"Authenticated as {user_email}"
+        if scope_mismatch:
+            message += (
+                ". WARNING: Token scopes do not match current mode. "
+                "Run gmail_login to re-authenticate with correct scopes."
+            )
+
         return build_success_response(
             data={
                 "authenticated": True,
                 "email": user_email,
+                "mode": mode,
+                "expected_scopes": _scope_labels(expected_scopes),
+                "token_scopes": _scope_labels(token_scopes),
+                "scope_mismatch": scope_mismatch,
             },
-            message=f"Authenticated as {user_email}",
+            message=message,
         )
 
     except AuthenticationError as e:
@@ -59,6 +103,10 @@ async def gmail_get_auth_status() -> dict[str, Any]:
             data={
                 "authenticated": False,
                 "email": None,
+                "mode": mode,
+                "expected_scopes": _scope_labels(expected_scopes),
+                "token_scopes": _scope_labels(token_scopes),
+                "scope_mismatch": scope_mismatch,
             },
             message=(
                 "Credentials are invalid or expired. "

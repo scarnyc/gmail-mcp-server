@@ -192,6 +192,7 @@ class OAuthManager:
             "state": state,
             "access_type": "offline",
             "prompt": "consent",
+            "include_granted_scopes": "false",
         }
 
         auth_url = f"{GOOGLE_AUTH_URI}?{urlencode(params)}"

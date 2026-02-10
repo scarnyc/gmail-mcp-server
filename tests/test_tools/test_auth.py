@@ -12,9 +12,11 @@ from gmail_mcp.utils.errors import AuthenticationError
 class TestGmailLogin:
     """Tests for gmail_login tool (local server OAuth flow)."""
 
+    READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+
     @pytest.mark.asyncio
     async def test_login_success_stores_token(self):
-        """Test successful login stores tokens and returns email."""
+        """Test successful login stores tokens and returns email with mode info."""
         mock_token_data = {
             "access_token": "ya29.test_token",
             "refresh_token": "refresh_test",
@@ -27,6 +29,11 @@ class TestGmailLogin:
             patch("gmail_mcp.tools.auth.login.token_storage") as mock_storage,
             patch("gmail_mcp.tools.auth.login.gmail_client") as mock_client,
             patch("gmail_mcp.tools.auth.login.build") as mock_build,
+            patch("gmail_mcp.tools.auth.login.is_read_only", return_value=True),
+            patch(
+                "gmail_mcp.tools.auth.login.get_gmail_scopes",
+                return_value=[self.READONLY_SCOPE],
+            ),
         ):
             mock_oauth.is_configured = True
             mock_oauth.oauth_port = 3000  # Default port
@@ -44,6 +51,9 @@ class TestGmailLogin:
 
             assert result["status"] == "success"
             assert result["data"]["email"] == "user@gmail.com"
+            assert result["data"]["mode"] == "read_only"
+            assert result["data"]["scopes"] == [self.READONLY_SCOPE]
+            assert "read_only" in result["message"]
             mock_oauth.run_local_server.assert_called_once_with(port=3000, timeout=120)
             mock_storage.save.assert_called_once_with("default", mock_token_data)
             mock_client.invalidate.assert_called_once_with("default")
@@ -175,17 +185,36 @@ class TestGmailLogout:
 class TestGmailGetAuthStatus:
     """Tests for gmail_get_auth_status tool."""
 
+    READONLY_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+    FULL_SCOPES = [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.labels",
+    ]
+
     @pytest.mark.asyncio
     async def test_auth_status_authenticated(self):
-        """Test returns authenticated status with email."""
+        """Test returns authenticated status with email and mode info."""
         mock_profile = {"emailAddress": "user@gmail.com"}
 
-        with patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client:
+        with (
+            patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client,
+            patch("gmail_mcp.tools.auth.status.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.status.is_read_only", return_value=True),
+            patch(
+                "gmail_mcp.tools.auth.status.get_gmail_scopes",
+                return_value=[self.READONLY_SCOPE],
+            ),
+        ):
             mock_client.is_authenticated.return_value = True
             mock_service = MagicMock()
             mock_users = mock_service.users.return_value
             mock_users.getProfile.return_value.execute.return_value = mock_profile
             mock_client.get_service.return_value = mock_service
+            mock_storage.load.return_value = {
+                "scopes": [self.READONLY_SCOPE],
+            }
 
             from gmail_mcp.tools.auth.status import gmail_get_auth_status
 
@@ -194,11 +223,22 @@ class TestGmailGetAuthStatus:
             assert result["status"] == "success"
             assert result["data"]["authenticated"] is True
             assert result["data"]["email"] == "user@gmail.com"
+            assert result["data"]["mode"] == "read_only"
+            assert result["data"]["expected_scopes"] == ["readonly"]
+            assert result["data"]["token_scopes"] == ["readonly"]
+            assert result["data"]["scope_mismatch"] is False
 
     @pytest.mark.asyncio
     async def test_auth_status_not_authenticated(self):
-        """Test returns not authenticated status."""
-        with patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client:
+        """Test returns not authenticated status with mode info."""
+        with (
+            patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client,
+            patch("gmail_mcp.tools.auth.status.is_read_only", return_value=False),
+            patch(
+                "gmail_mcp.tools.auth.status.get_gmail_scopes",
+                return_value=self.FULL_SCOPES,
+            ),
+        ):
             mock_client.is_authenticated.return_value = False
 
             from gmail_mcp.tools.auth.status import gmail_get_auth_status
@@ -208,13 +248,26 @@ class TestGmailGetAuthStatus:
             assert result["status"] == "success"
             assert result["data"]["authenticated"] is False
             assert result["data"]["email"] is None
+            assert result["data"]["mode"] == "full_access"
+            assert "readonly" in result["data"]["expected_scopes"]
 
     @pytest.mark.asyncio
     async def test_auth_status_invalid_credentials(self):
         """Test returns not authenticated when credentials are invalid."""
-        with patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client:
+        with (
+            patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client,
+            patch("gmail_mcp.tools.auth.status.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.status.is_read_only", return_value=True),
+            patch(
+                "gmail_mcp.tools.auth.status.get_gmail_scopes",
+                return_value=[self.READONLY_SCOPE],
+            ),
+        ):
             mock_client.is_authenticated.return_value = True
             mock_client.get_service.side_effect = AuthenticationError("Token expired")
+            mock_storage.load.return_value = {
+                "scopes": [self.READONLY_SCOPE],
+            }
 
             from gmail_mcp.tools.auth.status import gmail_get_auth_status
 
@@ -223,3 +276,36 @@ class TestGmailGetAuthStatus:
             assert result["status"] == "success"
             assert result["data"]["authenticated"] is False
             assert "invalid or expired" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_auth_status_scope_mismatch(self):
+        """Test detects scope mismatch when token has full scopes in read-only mode."""
+        mock_profile = {"emailAddress": "user@gmail.com"}
+
+        with (
+            patch("gmail_mcp.tools.auth.status.gmail_client") as mock_client,
+            patch("gmail_mcp.tools.auth.status.token_storage") as mock_storage,
+            patch("gmail_mcp.tools.auth.status.is_read_only", return_value=True),
+            patch(
+                "gmail_mcp.tools.auth.status.get_gmail_scopes",
+                return_value=[self.READONLY_SCOPE],
+            ),
+        ):
+            mock_client.is_authenticated.return_value = True
+            mock_service = MagicMock()
+            mock_users = mock_service.users.return_value
+            mock_users.getProfile.return_value.execute.return_value = mock_profile
+            mock_client.get_service.return_value = mock_service
+            # Token has all 4 scopes from previous full-access auth
+            mock_storage.load.return_value = {"scopes": self.FULL_SCOPES}
+
+            from gmail_mcp.tools.auth.status import gmail_get_auth_status
+
+            result = await gmail_get_auth_status()
+
+            assert result["status"] == "success"
+            assert result["data"]["authenticated"] is True
+            assert result["data"]["scope_mismatch"] is True
+            assert len(result["data"]["token_scopes"]) == 4
+            assert len(result["data"]["expected_scopes"]) == 1
+            assert "re-authenticate" in result["message"].lower()
