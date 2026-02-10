@@ -78,6 +78,11 @@ def main() -> None:
         logger.error("Environment validation failed. Exiting.")
         sys.exit(1)
 
+    # Log read-only mode
+    read_only = os.getenv("READ_ONLY", "").lower() in ("true", "1", "yes")
+    if read_only:
+        logger.info("Running in READ-ONLY mode (only gmail.readonly scope)")
+
     # Import server after environment is validated
     from gmail_mcp.server import mcp
 

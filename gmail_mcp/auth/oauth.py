@@ -35,13 +35,37 @@ from gmail_mcp.utils.errors import AuthenticationError
 
 logger = logging.getLogger(__name__)
 
-# Gmail API scopes - minimal required for MCP server operations
-GMAIL_SCOPES = [
+# Gmail API scopes - full set for read-write operations
+GMAIL_SCOPES_FULL = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/gmail.compose",
     "https://www.googleapis.com/auth/gmail.labels",
 ]
+
+# Gmail API scopes - minimal set for read-only mode
+GMAIL_SCOPES_READONLY = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+]
+
+
+def is_read_only() -> bool:
+    """Check if server is running in read-only mode."""
+    return os.getenv("READ_ONLY", "").lower() in ("true", "1", "yes")
+
+
+def get_gmail_scopes() -> list[str]:
+    """Get Gmail API scopes based on server mode.
+
+    Returns read-only scope when READ_ONLY=true, full scopes otherwise.
+    """
+    if is_read_only():
+        return GMAIL_SCOPES_READONLY
+    return GMAIL_SCOPES_FULL
+
+
+# Backward-compatible alias — prefer get_gmail_scopes() for mode-aware usage
+GMAIL_SCOPES = GMAIL_SCOPES_FULL
 
 # Google OAuth endpoints
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -164,7 +188,7 @@ class OAuthManager:
             "client_id": self._client_id,
             "redirect_uri": self._redirect_uri,
             "response_type": "code",
-            "scope": " ".join(GMAIL_SCOPES),
+            "scope": " ".join(get_gmail_scopes()),
             "state": state,
             "access_type": "offline",
             "prompt": "consent",
@@ -208,7 +232,7 @@ class OAuthManager:
 
         flow = Flow.from_client_config(
             self._get_client_config(),
-            scopes=GMAIL_SCOPES,
+            scopes=get_gmail_scopes(),
             redirect_uri=self._redirect_uri,
         )
 
@@ -224,7 +248,9 @@ class OAuthManager:
                 "token_uri": credentials.token_uri,
                 "client_id": credentials.client_id,
                 "scopes": (
-                    list(credentials.scopes) if credentials.scopes else GMAIL_SCOPES
+                    list(credentials.scopes)
+                    if credentials.scopes
+                    else get_gmail_scopes()
                 ),
             }
 
@@ -308,7 +334,7 @@ class OAuthManager:
             token_uri=token_data.get("token_uri", GOOGLE_TOKEN_URI),
             client_id=token_data.get("client_id", self._client_id),
             client_secret=token_data.get("client_secret", self._client_secret),
-            scopes=token_data.get("scopes", GMAIL_SCOPES),
+            scopes=token_data.get("scopes", get_gmail_scopes()),
         )
 
     # =========================================================================
@@ -549,7 +575,7 @@ class OAuthManager:
                 GOOGLE_DEVICE_AUTH_URI,
                 data={
                     "client_id": self._client_id,
-                    "scope": " ".join(GMAIL_SCOPES),
+                    "scope": " ".join(get_gmail_scopes()),
                 },
                 timeout=30,
             )
@@ -638,7 +664,7 @@ class OAuthManager:
                         "refresh_token": data.get("refresh_token"),
                         "token_uri": GOOGLE_TOKEN_URI,
                         "client_id": self._client_id,
-                        "scopes": GMAIL_SCOPES,
+                        "scopes": get_gmail_scopes(),
                     }
 
                 # Handle various error conditions
@@ -695,6 +721,10 @@ __all__ = [
     "OAuthManager",
     "oauth_manager",
     "GMAIL_SCOPES",
+    "GMAIL_SCOPES_FULL",
+    "GMAIL_SCOPES_READONLY",
+    "get_gmail_scopes",
+    "is_read_only",
     "GOOGLE_AUTH_URI",
     "GOOGLE_TOKEN_URI",
     "GOOGLE_DEVICE_AUTH_URI",

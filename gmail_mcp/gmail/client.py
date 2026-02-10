@@ -11,7 +11,7 @@ from typing import Any
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import Resource, build
 
-from gmail_mcp.auth.oauth import GMAIL_SCOPES, GOOGLE_TOKEN_URI
+from gmail_mcp.auth.oauth import GOOGLE_TOKEN_URI, get_gmail_scopes
 from gmail_mcp.auth.storage import token_storage
 from gmail_mcp.utils.errors import AuthenticationError
 
@@ -149,7 +149,7 @@ class GmailClient:
             token_uri=token_data.get("token_uri", GOOGLE_TOKEN_URI),
             client_id=token_data.get("client_id"),
             client_secret=client_secret,
-            scopes=token_data.get("scopes", GMAIL_SCOPES),
+            scopes=token_data.get("scopes", get_gmail_scopes()),
             expiry=expiry,
         )
 
@@ -170,7 +170,7 @@ class GmailClient:
             "refresh_token": creds.refresh_token,
             "token_uri": creds.token_uri,
             "client_id": creds.client_id,
-            "scopes": list(creds.scopes) if creds.scopes else GMAIL_SCOPES,
+            "scopes": list(creds.scopes) if creds.scopes else get_gmail_scopes(),
         }
         if creds.expiry:
             token_data["expiry"] = creds.expiry.isoformat()

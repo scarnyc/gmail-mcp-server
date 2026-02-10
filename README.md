@@ -4,7 +4,8 @@ An MCP (Model Context Protocol) server that enables Claude to manage Gmail inbox
 
 ## Features
 
-- **15 Gmail Tools** - Full inbox management via conversational AI
+- **16 Gmail Tools** - Full inbox management via conversational AI
+- **Read-Only Mode** - Run with `READ_ONLY=true` for safe cross-project use (9 tools, single OAuth scope)
 - **Human-in-the-Loop Security** - All write operations require explicit approval
 - **Encrypted Token Storage** - AES-256-GCM encryption for OAuth tokens at rest
 - **Rate Limiting** - Token bucket protection (100 req/min default)
@@ -84,6 +85,7 @@ Restart Claude Code, then run `/mcp` to verify the Gmail server is connected.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `READ_ONLY` | `false` | Read-only mode — only `gmail.readonly` scope, no write tools |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio`, `http`, `sse`, `streamable-http` |
 | `PORT` | `3000` | HTTP server port (for http/sse transport) |
 | `OAUTH_PORT` | `3000` | OAuth callback port (fallback: 3001, 3002) |
@@ -99,6 +101,42 @@ Restart Claude Code, then run `/mcp` to verify the Gmail server is connected.
 | `stdio` | Local development with Claude Code/Desktop |
 | `http` / `sse` | Remote deployments (Replit, Docker) |
 | `streamable-http` | Stateless deployments |
+
+### Read-Only Mode
+
+Set `READ_ONLY=true` for safe, read-only Gmail access — ideal for a global MCP config shared across all projects.
+
+**What changes:**
+
+| | Full Mode (default) | Read-Only Mode |
+|---|---|---|
+| OAuth scopes | 4 scopes (readonly, modify, compose, labels) | 1 scope (`gmail.readonly`) |
+| Tools registered | 16 (3 auth + 7 read + 6 write) | 9 (3 auth + 6 read) |
+| Write tools visible | Yes (with HITL approval) | No — Claude can't see them |
+| Consent screen | 4 checkboxes | 1 checkbox |
+
+**Global read-only config** (`~/.claude/.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "gmail-mcp",
+      "args": [],
+      "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
+        "READ_ONLY": "true"
+      }
+    }
+  }
+}
+```
+
+To override in a specific project (e.g., for full access), add a project-level `.mcp.json` without `READ_ONLY` or set it to `"false"`.
+
+**Note:** Switching between modes requires re-authentication (`gmail_login`) since Google doesn't upgrade scopes on existing tokens.
 
 ---
 
@@ -123,14 +161,17 @@ Restart Claude Code, then run `/mcp` to verify the Gmail server is connected.
 
 These tools read data without modifying your inbox. No approval required.
 
-| Tool | Description |
-|------|-------------|
-| `gmail_triage_inbox` | Categorize emails by urgency (urgent, social, newsletter, other) |
-| `gmail_search` | Search using Gmail query syntax |
-| `gmail_summarize_thread` | Get full thread content for summarization |
-| `gmail_draft_reply` | Get context for composing a reply |
-| `gmail_chat_inbox` | Natural language inbox queries |
-| `gmail_apply_labels` | Add or remove labels from messages |
+| Tool | Description | Read-Only |
+|------|-------------|-----------|
+| `gmail_triage_inbox` | Categorize emails by urgency (urgent, social, newsletter, other) | Yes |
+| `gmail_search` | Search using Gmail query syntax | Yes |
+| `gmail_summarize_thread` | Get full thread content for summarization | Yes |
+| `gmail_draft_reply` | Get context for composing a reply | Yes |
+| `gmail_chat_inbox` | Natural language inbox queries | Yes |
+| `gmail_download_email` | Download email as .eml, HTML, and attachments | Yes |
+| `gmail_apply_labels` | Add or remove labels from messages | No* |
+
+*`gmail_apply_labels` requires `gmail.modify` scope and is excluded in read-only mode.
 
 **Example prompts:**
 
@@ -209,7 +250,7 @@ Claude: "Email sent successfully!"
 
 ```
 ┌──────────┐      ┌─────────┐      ┌─────────────────┐      ┌───────────┐
-│   User   │ ←──→ │  Claude │ ←──→ │ Gmail MCP Server│ ←──→ │ Gmail API │
+│   User   │ <──> │  Claude │ <──> │ Gmail MCP Server│ <──> │ Gmail API │
 └──────────┘      └─────────┘      └─────────────────┘      └───────────┘
                        │                    │
                        │              ┌─────┴─────┐

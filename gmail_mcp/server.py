@@ -205,16 +205,20 @@ def _register_auth_tools(mcp: FastMCP) -> None:
 # =============================================================================
 
 
-def _register_read_tools(mcp: FastMCP) -> None:
-    """Register all read-only tools with the FastMCP server.
+def _register_read_tools(mcp: FastMCP, *, read_only: bool = False) -> None:
+    """Register read-only tools with the FastMCP server.
 
     Read tools do not require HITL approval and are marked with:
     - readOnlyHint=True
     - destructiveHint=False
     - idempotentHint=True (most are idempotent)
 
+    When read_only is True, gmail_apply_labels is skipped since it requires
+    gmail.modify scope.
+
     Args:
         mcp: The FastMCP server instance.
+        read_only: If True, skip tools that require write scopes.
     """
 
     @mcp.tool(
@@ -367,42 +371,45 @@ def _register_read_tools(mcp: FastMCP) -> None:
         params = ChatInboxParams(question=question)
         return await gmail_chat_inbox(params)
 
-    @mcp.tool(
-        name="gmail_apply_labels",
-        annotations=ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-        ),
-    )
-    async def gmail_apply_labels_tool(
-        message_ids: list[str],
-        add_labels: list[str] | None = None,
-        remove_labels: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Apply labels to messages (add or remove).
+    # gmail_apply_labels requires gmail.modify scope — skip in read-only mode
+    if not read_only:
 
-        Adds and/or removes labels from the specified messages. This operation
-        is idempotent - applying the same labels multiple times has no
-        additional effect.
-
-        NOTE: This tool does NOT require HITL approval since it only modifies
-        labels, not message content.
-
-        Args:
-            message_ids: List of message IDs to modify.
-            add_labels: Labels to add (names or IDs).
-            remove_labels: Labels to remove (names or IDs).
-
-        Returns:
-            Result with modified count and label changes.
-        """
-        params = ApplyLabelsParams(
-            message_ids=message_ids,
-            add_labels=add_labels or [],
-            remove_labels=remove_labels or [],
+        @mcp.tool(
+            name="gmail_apply_labels",
+            annotations=ToolAnnotations(
+                readOnlyHint=False,
+                destructiveHint=False,
+                idempotentHint=True,
+            ),
         )
-        return await gmail_apply_labels(params)
+        async def gmail_apply_labels_tool(
+            message_ids: list[str],
+            add_labels: list[str] | None = None,
+            remove_labels: list[str] | None = None,
+        ) -> dict[str, Any]:
+            """Apply labels to messages (add or remove).
+
+            Adds and/or removes labels from the specified messages. This operation
+            is idempotent - applying the same labels multiple times has no
+            additional effect.
+
+            NOTE: This tool does NOT require HITL approval since it only modifies
+            labels, not message content.
+
+            Args:
+                message_ids: List of message IDs to modify.
+                add_labels: Labels to add (names or IDs).
+                remove_labels: Labels to remove (names or IDs).
+
+            Returns:
+                Result with modified count and label changes.
+            """
+            params = ApplyLabelsParams(
+                message_ids=message_ids,
+                add_labels=add_labels or [],
+                remove_labels=remove_labels or [],
+            )
+            return await gmail_apply_labels(params)
 
     @mcp.tool(
         name="gmail_download_email",
@@ -696,21 +703,37 @@ def create_server() -> FastMCP:
 
     Creates a FastMCP server with:
     - Lifespan context manager for startup/shutdown cleanup
-    - All 16 Gmail tools registered with appropriate annotations
+    - Tool registration based on READ_ONLY mode:
+      - Read-only: auth + read tools only (no write tools, no apply_labels)
+      - Full: all tools registered
 
     Returns:
         Configured FastMCP server instance.
     """
+    from gmail_mcp.auth.oauth import is_read_only
+
+    read_only = is_read_only()
+
     server = FastMCP(
         name="gmail-mcp-server",
         lifespan=server_lifespan,
     )
 
     _register_auth_tools(server)
-    _register_read_tools(server)
-    _register_write_tools(server)
+    _register_read_tools(server, read_only=read_only)
 
-    logger.info("Gmail MCP server created with 16 tools registered")
+    if read_only:
+        # 3 auth + 6 read tools (apply_labels excluded)
+        tool_count = 9
+        logger.info(
+            "Gmail MCP server created in READ-ONLY mode with %d tools", tool_count
+        )
+    else:
+        _register_write_tools(server)
+        # 3 auth + 7 read + 6 write
+        tool_count = 16
+        logger.info("Gmail MCP server created with %d tools registered", tool_count)
+
     return server
 
 

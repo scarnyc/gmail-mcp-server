@@ -183,12 +183,15 @@ export TOKEN_ENCRYPTION_KEY="$(openssl rand -hex 32)"
         "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
         "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
         "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
-        "TRANSPORT": "stdio"
+        "TRANSPORT": "stdio",
+        "READ_ONLY": "true"
       }
     }
   }
 }
 ```
+
+Set `READ_ONLY` to `"true"` for read-only access (9 tools, `gmail.readonly` scope only) or omit/set `"false"` for full access (16 tools, all scopes).
 
 4. Restart Claude Code, verify with `/mcp`
 
@@ -204,6 +207,7 @@ gmail-mcp serve    # Start MCP server (alias for python -m gmail_mcp)
 | `GOOGLE_CLIENT_ID` | Yes | - | OAuth 2.0 Client ID |
 | `GOOGLE_CLIENT_SECRET` | Yes | - | OAuth 2.0 Client Secret |
 | `TOKEN_ENCRYPTION_KEY` | Yes | - | 64-char hex (256-bit AES key) |
+| `READ_ONLY` | No | `false` | Read-only mode: only `gmail.readonly` scope, no write tools |
 | `TRANSPORT` | No | `stdio` | Transport: stdio, http, streamable-http |
 | `PORT` | No | `3000` | HTTP server port |
 | `OAUTH_PORT` | No | `3000` | OAuth callback server port (fallback: +1, +2) |
@@ -212,11 +216,17 @@ gmail-mcp serve    # Start MCP server (alias for python -m gmail_mcp)
 
 ## OAuth Scopes
 
-Request minimal scopes:
+Scopes are determined dynamically based on `READ_ONLY` mode (`get_gmail_scopes()` in `auth/oauth.py`):
+
+**Read-only mode** (`READ_ONLY=true`): Requests only `gmail.readonly` — single checkbox on consent screen.
+
+**Full mode** (default): Requests all 4 scopes:
 - `gmail.readonly` - Read emails
 - `gmail.modify` - Modify (labels, archive)
 - `gmail.compose` - Send emails
 - `gmail.labels` - Manage labels
+
+**Note:** Switching modes requires re-authentication (`gmail_login`) since Google doesn't upgrade scopes on existing tokens.
 
 ## Testing Strategy
 
@@ -239,23 +249,26 @@ Dev:
 
 ## Tool Annotations Reference
 
-| Tool | readOnly | destructive | idempotent |
-|------|----------|-------------|------------|
-| gmail_login | | | |
-| gmail_logout | | Y | Y |
-| gmail_get_auth_status | Y | | Y |
-| gmail_triage_inbox | Y | | Y |
-| gmail_summarize_thread | Y | | Y |
-| gmail_draft_reply | Y | | Y |
-| gmail_search | Y | | Y |
-| gmail_chat_inbox | Y | | Y |
-| gmail_apply_labels | | | Y |
-| gmail_send_email | | Y | |
-| gmail_archive_email | | Y | Y |
-| gmail_delete_email | | Y | |
-| gmail_unsubscribe | | Y | |
-| gmail_create_label | | | |
-| gmail_organize_labels | | Y | |
+Tools registered depend on `READ_ONLY` mode. In read-only mode (9 tools), only auth + read tools are available. In full mode (16 tools), all tools are registered.
+
+| Tool | readOnly | destructive | idempotent | Mode |
+|------|----------|-------------|------------|------|
+| gmail_login | | | | both |
+| gmail_logout | | Y | Y | both |
+| gmail_get_auth_status | Y | | Y | both |
+| gmail_triage_inbox | Y | | Y | both |
+| gmail_summarize_thread | Y | | Y | both |
+| gmail_draft_reply | Y | | Y | both |
+| gmail_search | Y | | Y | both |
+| gmail_chat_inbox | Y | | Y | both |
+| gmail_download_email | Y | | Y | both |
+| gmail_apply_labels | | | Y | full only |
+| gmail_send_email | | Y | | full only |
+| gmail_archive_email | | Y | Y | full only |
+| gmail_delete_email | | Y | | full only |
+| gmail_unsubscribe | | Y | | full only |
+| gmail_create_label | | | | full only |
+| gmail_organize_labels | | Y | | full only |
 
 ## Project-Level Plugins
 
@@ -610,38 +623,64 @@ async def gmail_send_email(params: SendEmailParams) -> dict:
 
 The server reads TRANSPORT env var to start in the right mode. The client (Claude) needs matching configuration:
 
-#### Local Development (stdio transport)
+#### Global Read-Only (recommended for cross-project use)
 
-Add to .mcp.json in project root or ~/.claude/.mcp.json globally:
+Add to `~/.claude/.mcp.json` for read-only Gmail access across all projects:
 
+```json
 {
-"mcpServers": {
+  "mcpServers": {
     "gmail": {
-    "command": "gmail-mcp",
-    "args": [],
-    "env": {
+      "command": "gmail-mcp",
+      "args": [],
+      "env": {
+        "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
+        "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
+        "READ_ONLY": "true",
+        "TRANSPORT": "stdio"
+      }
+    }
+  }
+}
+```
+
+#### Local Development — Full Access (stdio transport)
+
+Add to `.mcp.json` in project root for full read-write access:
+
+```json
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "gmail-mcp",
+      "args": [],
+      "env": {
         "GOOGLE_CLIENT_ID": "${GOOGLE_CLIENT_ID}",
         "GOOGLE_CLIENT_SECRET": "${GOOGLE_CLIENT_SECRET}",
         "TOKEN_ENCRYPTION_KEY": "${TOKEN_ENCRYPTION_KEY}",
         "TRANSPORT": "stdio"
+      }
     }
-    }
+  }
 }
-}
+```
 
 Or run via Poetry:
+```json
 {
-"mcpServers": {
+  "mcpServers": {
     "gmail": {
-    "command": "poetry",
-    "args": ["run", "python", "-m", "gmail_mcp"],
-    "cwd": "/path/to/gmail-mcp-server",
-    "env": {
+      "command": "poetry",
+      "args": ["run", "python", "-m", "gmail_mcp"],
+      "cwd": "/path/to/gmail-mcp-server",
+      "env": {
         "TRANSPORT": "stdio"
+      }
     }
-    }
+  }
 }
-}
+```
 
 #### Replit Production (HTTP transport)
 
