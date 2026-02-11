@@ -21,16 +21,14 @@ def list_threads(
     """List threads matching query and labels."""
     try:
         threads: list[dict[str, Any]] = []
-        request = (
-            service.users()
-            .threads()
-            .list(
-                userId="me",
-                q=query,
-                labelIds=label_ids or [],
-                maxResults=min(max_results, 500),
-            )
-        )
+        list_params: dict[str, Any] = {
+            "userId": "me",
+            "q": query,
+            "maxResults": min(max_results, 500),
+        }
+        if label_ids:
+            list_params["labelIds"] = label_ids
+        request = service.users().threads().list(**list_params)
 
         while request and len(threads) < max_results:
             response = request.execute()

@@ -24,16 +24,14 @@ def list_messages(
     """List messages matching query and labels."""
     try:
         messages: list[dict[str, Any]] = []
-        request = (
-            service.users()
-            .messages()
-            .list(
-                userId="me",
-                q=query,
-                labelIds=label_ids or [],
-                maxResults=min(max_results, 500),
-            )
-        )
+        list_params: dict[str, Any] = {
+            "userId": "me",
+            "q": query,
+            "maxResults": min(max_results, 500),
+        }
+        if label_ids:
+            list_params["labelIds"] = label_ids
+        request = service.users().messages().list(**list_params)
 
         while request and len(messages) < max_results:
             response = request.execute()
