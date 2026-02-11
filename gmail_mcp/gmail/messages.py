@@ -24,15 +24,18 @@ def list_messages(
     """List messages matching query and labels."""
     try:
         messages: list[dict[str, Any]] = []
+        # Merge label_ids into the q parameter as label: filters instead of
+        # using the labelIds parameter.  The google-api-python-client's
+        # list_next() pagination helper calls parse_unique_urlencoded() which
+        # raises ValueError on repeated URL keys like labelIds=INBOX&labelIds=UNREAD.
+        combined_query = query
+        if label_ids:
+            label_filters = " ".join(f"label:{lid}" for lid in label_ids)
+            combined_query = f"{query} {label_filters}".strip()
         request = (
             service.users()
             .messages()
-            .list(
-                userId="me",
-                q=query,
-                labelIds=label_ids or [],
-                maxResults=min(max_results, 500),
-            )
+            .list(userId="me", q=combined_query, maxResults=min(max_results, 500))
         )
 
         while request and len(messages) < max_results:
