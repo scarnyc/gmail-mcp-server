@@ -563,8 +563,8 @@ class OAuthManager:
         else:
             auth_url, state = self.create_auth_url()
 
-        # Open browser to authorization URL
-        logger.info("Opening browser for authentication on port %d...", actual_port)
+        # Open browser to authorization URL (do not log concrete port for security)
+        logger.info("Opening browser for OAuth authentication...")
         webbrowser.open(auth_url)
 
         # Wait for callback (single request)
